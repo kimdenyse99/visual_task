@@ -1,0 +1,33 @@
+{
+  "default": {
+    "inter_trial_duration_ms": 2000,
+    "reward_duration_ms": 1000,
+    "attention_duration_ms": 1000,
+    "visual_delay_ms": 500,
+    "border_width": 40,
+    "level_up_threshold": 0.8,
+    "level_up_trial_count_threshold": 200,
+    "levels": {
+      "1": {
+        "reaction_window_duration_ms": 5000,
+        "target_size_ratio": 0.4,
+        "reaction_timeout_enabled": false
+      },
+      "2": {
+        "reaction_window_duration_ms": 5000,
+        "target_size_ratio": 0.3,
+        "reaction_timeout_enabled": false
+      },
+      "3": {
+        "reaction_window_duration_ms": 5000,
+        "target_size_ratio": 0.25,
+        "reaction_timeout_enabled": false
+      },
+      "4": {
+        "reaction_window_duration_ms": 5000,
+        "target_size_ratio": 0.2,
+        "reaction_timeout_enabled": true
+      }
+    }
+  }
+}

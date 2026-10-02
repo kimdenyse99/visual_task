@@ -1,0 +1,40 @@
+[project]
+name = "py-virtualcall"
+version = "0.1.1"
+description = "Marmoset virtual vocalization synthesizer, ported from Wang Lab VirtualCall V2.0"
+readme = "README.md"
+authors = [{ name = "HuYang", email = "huyangcommit@gmail.com" }]
+requires-python = ">=3.14"
+dependencies = [
+    "cyclopts",
+    "numpy",
+    "pydantic>=2.7",
+    "scipy",
+    "marimo",
+    "matplotlib",
+    "rich>=15.0.0",
+]
+
+
+[dependency-groups]
+dev = ["pyright>=1.1.411", "ruff>=0.16.0"]
+
+[tool.pyright]
+include = ["src/py_virtualcall", "tests"]
+ignore = ["src/py_virtualcall/marimo"]
+typeCheckingMode = "strict"
+reportPrivateUsage = "error"
+reportMissingTypeStubs = "none"
+
+
+[tool.ruff.lint.per-file-ignores]
+# marimo notebooks render UI elements as bare final expressions.
+"src/py_virtualcall/marimo/notebook.py" = ["B018", "PLR1711"]
+
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+source-exclude = ["**/__marimo__/**"]

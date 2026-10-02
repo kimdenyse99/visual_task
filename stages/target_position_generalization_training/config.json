@@ -1,0 +1,47 @@
+{
+  "default": {
+    "inter_trial_duration_ms": 5000,
+    "reward_duration_ms": 1000,
+    "attention_duration_ms": 1000,
+    "visual_delay_ms": 500,
+    "pure_tone_frequency_range_hz": [
+      2000,
+      10000
+    ],
+    "pure_tone_unit_duration_ms": 200,
+    "pure_tone_interval_ms": 200,
+    "pure_tone_duration_range_ms": [
+      1000,
+      2000
+    ],
+    "border_width": 40,
+    "level_up_threshold": 0.8,
+    "level_up_trial_count_threshold": 20,
+    "levels": {
+      "1": {
+        "twitter_trial_probability": 0.5,
+        "reaction_window_duration_ms": 5000,
+        "position_offset_ratio": 0,
+        "reaction_timeout_enabled": false
+      },
+      "2": {
+        "twitter_trial_probability": 0.5,
+        "reaction_window_duration_ms": 5000,
+        "position_offset_ratio": 0.3333333333333333,
+        "reaction_timeout_enabled": false
+      },
+      "3": {
+        "twitter_trial_probability": 0.5,
+        "reaction_window_duration_ms": 5000,
+        "position_offset_ratio": 0.6666666666666666,
+        "reaction_timeout_enabled": false
+      },
+      "4": {
+        "twitter_trial_probability": 0.5,
+        "reaction_window_duration_ms": 5000,
+        "position_offset_ratio": 1,
+        "reaction_timeout_enabled": true
+      }
+    }
+  }
+}
