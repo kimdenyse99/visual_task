@@ -1,0 +1,23 @@
+{
+    "mxbi_id": "kimdenyse99",
+    "screen_size": [
+        1024,
+        600
+    ],
+    "backup_source_root_id": "",
+    "backup_destination_root_id": "",
+    "rewarders": [
+        {
+            "type": "mock",
+            "id": 0,
+            "enabled": true
+        }
+    ],
+    "detectors": [
+        {
+            "type": "mock",
+            "id": 0,
+            "enabled": true
+        }
+    ]
+}
