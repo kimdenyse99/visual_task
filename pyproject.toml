@@ -8,13 +8,9 @@ dependencies = [
     "mxbiflow[log]>=0.3.23",
     "numpy>=2.5.2",
     "pymotego>=0.1.6",
-    "py-virtualcall",
     "rich>=15.0.0",
     "seaborn>=0.13.2",
 ]
-
-[tool.uv.sources]
-py-virtualcall = { path = "vendor/py-virtualcall", editable = true }
 
 [tool.pyright]
 include = ["analysis", "main.py", "models.py", "stages", "tests"]
