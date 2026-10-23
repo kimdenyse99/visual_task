@@ -20,7 +20,7 @@ from stages.target_position_generalization_training import (
 )
 from stages.touchscreen_training import TouchscreenTraining
 from stages.visual_3pt_calibration import Visual3ptCalibration
-from stages.visual_touchscreen_training import VisualTouchscreenTraining
+from stages.visual_stability_training import VisualStabilityTraining
 from stages.size_reduction_3pt import SizeReduction3Pt
 from stages.visual_tracing import VisualTracing
 
@@ -38,7 +38,7 @@ def main() -> None:
     scene_manager.register(
         [  
             SizeReduction3Pt,
-            VisualTouchscreenTraining,
+            VisualStabilityTraining,
             Visual3ptCalibration,
             VisualTracing,
             TouchscreenTraining,
