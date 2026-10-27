@@ -16,8 +16,6 @@ from mxbiflow.infra import DataLogger
 from mxbiflow.scene import Scene
 from pygame import (
     FINGERDOWN,
-    FINGERMOTION,
-    FINGERUP,
     MOUSEBUTTONDOWN,
     MOUSEBUTTONUP,
     MOUSEMOTION,
