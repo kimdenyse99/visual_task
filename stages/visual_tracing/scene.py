@@ -36,6 +36,7 @@ from rich.pretty import pprint
 from dwell import DwellTracker
 from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
 from models import TouchEvent
+from trial_events import write_target_shown_event
 
 from .models import (
     LEVEL_TABLE,
@@ -786,6 +787,24 @@ class VisualTracing(Scene):
             color=(0, 0, 0),
         )
         self._sprites.add(self._target_sprite)
+
+        # Written at the exact moment the target becomes visible - not
+        # gated on any gaze judgment at all, unlike a "gaze correct"
+        # event. The target's position here is randomized per trial
+        # (_random_target_center), so unlike visual_stability_training's
+        # single fixed center point, each trial's pair should be treated
+        # as its own independent known point when later used for
+        # calibration, not assumed to be the same location across
+        # trials. See trial_events.py's module docstring for the full
+        # reasoning on why "target shown" is the right pre-calibration
+        # event.
+        write_target_shown_event(
+            self._mxbiflow,
+            self._animal,
+            self.name(),
+            self._animal.trial_id,
+            center,
+        )
 
         self._reaction_window_started_at_ms = monotonic() * 1000
         self._is_reaction_window_open = True
