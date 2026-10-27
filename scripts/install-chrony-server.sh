@@ -48,11 +48,12 @@ local stratum 10
 allow $ALLOWED
 # "allow" governs NTP time-serving only. chronyc's own monitoring
 # commands (e.g. "chronyc clients", used by check-chrony-server.sh) are a
-# separate subsystem requiring their own explicit permission - without
-# this, even a local, privileged user on this same machine can get
-# "501 Not authorised" from "chronyc clients" despite chrony otherwise
-# working correctly (NTP time-serving and "chronyc tracking" are
-# unaffected either way).
+# separate subsystem: cmdallow controls which NETWORK SOURCES may reach
+# the command socket at all (127.0.0.1 here = this machine only), but
+# "chronyc clients" additionally requires the calling process itself to
+# be root - run it with sudo even when cmdallow is already correct, or it
+# fails with "501 Not authorised" despite chrony otherwise working fine
+# (NTP time-serving and "chronyc tracking" are unaffected either way).
 cmdallow 127.0.0.1
 driftfile /var/lib/chrony/chrony.drift
 makestep 1.0 3
