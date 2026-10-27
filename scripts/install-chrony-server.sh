@@ -46,6 +46,14 @@ $MARKER: NTP server for the direct-link mx-eye client.
 # to, and the mx-eye client still needs a usable time source.
 local stratum 10
 allow $ALLOWED
+# "allow" governs NTP time-serving only. chronyc's own monitoring
+# commands (e.g. "chronyc clients", used by check-chrony-server.sh) are a
+# separate subsystem requiring their own explicit permission - without
+# this, even a local, privileged user on this same machine can get
+# "501 Not authorised" from "chronyc clients" despite chrony otherwise
+# working correctly (NTP time-serving and "chronyc tracking" are
+# unaffected either way).
+cmdallow 127.0.0.1
 driftfile /var/lib/chrony/chrony.drift
 makestep 1.0 3
 rtcsync
