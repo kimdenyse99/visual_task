@@ -36,6 +36,7 @@ from assets import M001, M002
 from dwell import DwellTracker
 from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
 from models import TouchEvent
+from trial_events import write_target_shown_event
 
 from .models import (
     LEVEL_TABLE,
@@ -497,11 +498,11 @@ class VisualStabilityTraining(Scene):
         self._result.fixation_touch_latency_ms = max(
             0.0, monotonic() * 1000 - self._fixation_shown_at_ms
         )
- 
+
         reward_duration_ms = self._config.fixation_touch_reward_duration_ms
         if reward_duration_ms > 0:
             self._give_reward(reward_duration_ms)
- 
+
         # The stimulus doesn't appear immediately on a qualifying
         # fixation touch - it's delayed by a randomized amount
         # (fixation_duration_min_ms/max_ms), the same randomized-delay
@@ -594,6 +595,21 @@ class VisualStabilityTraining(Scene):
             [
                 self._correct_target,
             ]
+        )
+        # Written at the exact moment the target becomes visible - not
+        # gated on any gaze judgment at all, unlike a "gaze correct"
+        # event. This is the right event for from-scratch,
+        # no-prior-calibration data collection: the target's position is
+        # fixed and known (see _init_visual_stimulus), independent of
+        # whether this session's (possibly nonexistent) calibration
+        # thinks gaze landed on it. See trial_events.py's module
+        # docstring for the full reasoning.
+        write_target_shown_event(
+            self._mxbiflow,
+            self._animal,
+            self.name(),
+            self._animal.trial_id,
+            self._correct_target.rect.center,
         )
         # Always schedule a hard close of the trial at
         # reaction_window_duration_ms after stimulus onset. This
