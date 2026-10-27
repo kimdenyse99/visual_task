@@ -13,7 +13,16 @@ printf '\ntracking (this machine'\''s own clock state):\n'
 chronyc -n tracking
 
 printf '\nclients served so far (look for the mx-eye Pi'\''s IP once it has polled):\n'
-chronyc -n clients
+# "chronyc clients" (unlike "tracking") requires the calling process
+# itself to be root, separately from the cmdallow directive in
+# chrony.conf (which only governs which *network sources* may reach the
+# command socket at all) - without sudo here this fails with
+# "501 Not authorised" even when cmdallow and everything else is correct.
+if [ "$(id -u)" -eq 0 ]; then
+    chronyc -n clients
+else
+    sudo chronyc -n clients
+fi
 
 printf '\nIf the mx-eye Pi'\''s IP never appears above after running its own\n'
 printf 'check-chrony-client.sh, double check: the IP/subnet passed to\n'
