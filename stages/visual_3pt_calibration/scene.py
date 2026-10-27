@@ -19,6 +19,8 @@ from mxbiflow.infra import DataLogger
 from mxbiflow.scene import Scene
 from pygame import (
     FINGERDOWN,
+    FINGERMOTION,
+    FINGERUP,
     MOUSEBUTTONDOWN,
     MOUSEBUTTONUP,
     MOUSEMOTION,
@@ -37,6 +39,7 @@ from assets import M001, M002
 from dwell import DwellTracker
 from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
 from models import TouchEvent
+from trial_events import write_target_shown_event
 
 from .models import (
     LEVEL_TABLE,
@@ -627,6 +630,28 @@ class Visual3ptCalibration(Scene):
             [
                 self._correct_target,
             ]
+        )
+        # Written at the exact moment the target becomes visible - not
+        # gated on any gaze judgment at all, unlike a "gaze correct"
+        # event. This trial's target is one of three fixed candidate
+        # positions, chosen randomly per trial in _init_visual_stimulus -
+        # each pair should be treated as its own independent known point
+        # when later used for calibration across the three positions, not
+        # assumed to be the same location across trials. Note also: for
+        # THIS stage specifically (multiple distinct candidate
+        # positions), a "gaze correct" event would have been doubly
+        # unusable for from-scratch calibration even setting aside the
+        # usual circularity problem - see trial_events.py's module
+        # docstring for why a multi-target stage's successful match
+        # doesn't unambiguously identify which position was actually
+        # shown without recording the position directly, which this event
+        # does via target_center.
+        write_target_shown_event(
+            self._mxbiflow,
+            self._animal,
+            self.name(),
+            self._animal.trial_id,
+            self._correct_target.rect.center,
         )
         # Always schedule a hard close of the trial at
         # reaction_window_duration_ms after stimulus onset (unconditional
