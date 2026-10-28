@@ -41,9 +41,22 @@ config() {
     cat <<EOF
 $MARKER: NTP server for the direct-link mx-eye client.
 # Re-run install-chrony-server.sh after editing; local edits are lost.
-# Serve time even before this host is itself synchronized to anything -
-# on an isolated direct link there is nothing else for this host to sync
-# to, and the mx-eye client still needs a usable time source.
+# This machine has no battery-backed RTC, so its own clock is wrong on
+# every boot (often reset to 1970) until something corrects it. If this
+# machine ALSO has a separate internet-connected interface (e.g. wlan0,
+# alongside the isolated direct-link eth0 to the mx-eye Pi), these pool
+# servers let chrony correct this machine's own clock from the real
+# internet - then everything downstream (this machine's own clock, and
+# whatever it serves to the mx-eye client over the direct link) is
+# actually accurate, not just internally self-consistent.
+pool 2.debian.pool.ntp.org iburst
+pool time.cloudflare.com iburst
+# Fallback only: used when none of the pool servers above are reachable
+# (e.g. no internet, or the direct link is the only interface up right
+# now) so the mx-eye client still has *something* to sync to rather than
+# nothing at all. chrony automatically prefers a real, reachable pool
+# server over this the moment one is available again - no extra
+# configuration needed for that preference.
 local stratum 10
 allow $ALLOWED
 # "allow" governs NTP time-serving only. chronyc's own monitoring
