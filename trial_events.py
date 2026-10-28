@@ -60,11 +60,19 @@ def _write_trial_event(
     event_name: str,
     target_center: tuple[int, int] | None,
 ) -> Path:
+    # One shared file per event type per session/stage (NOT per trial):
+    # the filename deliberately excludes trial_id, so DataLogger's own
+    # save_csv_row (which opens in append mode and only writes the header
+    # once - see mxbiflow.infra.data_logger.DataLogger.save_csv_row) just
+    # keeps adding one row per call to the same file, across every trial
+    # in this session. trial_id is still recorded as its own column in
+    # each row, so individual trials remain distinguishable within the
+    # one accumulated file.
     logger = DataLogger(
         session=mxbiflow.session,
         animal=animal.name,
         stage=stage_name,
-        filename=f"trial_{trial_id}_{event_name}",
+        filename=event_name,
         type=DataLoggerType.CSV,
     )
     logger.save(
