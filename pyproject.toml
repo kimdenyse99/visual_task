@@ -7,13 +7,14 @@ requires-python = ">=3.14"
 dependencies = [
     "mxbiflow[log]>=0.3.27",
     "numpy>=2.5.2",
+    "Pillow>=11.0.0",
     "pymotego>=0.1.6",
     "rich>=15.0.0",
     "seaborn>=0.13.2",
 ]
 
 [tool.uv.sources]
-mxbiflow = { git = "https://github.com/CHiPmxbi/mxbiflow.git", branch = "main" }
+mxbiflow = { git = "https://github.com/CHiPmxbi/mxbiflow.git", rev="451a8cd5e7cf9e215e9d82681abffc36c0e1bdb6" }
 py-mx-eye = { git = "https://github.com/kimdenyse99/mx_eye.git", subdirectory = "packages/py-mx-eye" }
 mx-eye-protocol = { git = "https://github.com/kimdenyse99/mx_eye.git", subdirectory = "packages/protocol" }
 

@@ -1,14 +1,9 @@
 {
   "default": {
     "inter_trial_duration_ms": 1500,
-    "visual_delay_ms": 500,
     "border_width": 40,
     "pixels_per_cm": 46,
-    "background_color": [
-      127,
-      127,
-      127
-    ],
+    "background_color": [127,127,127],
 
     "dwell_grace_enabled": true,
     "dwell_grace_ms": 150,
@@ -18,18 +13,14 @@
     "fixation_duration_min_ms": 1000,
     "fixation_duration_max_ms": 2000,
 
-    "fixation_point_radius_cm": 0.25,
+    "fixation_point_radius_cm": 0.50,
     "fixation_point_inner_radius_ratio": 0.4,
     
-    "target_distances_cm": 2.6,
-    "touch_buffer_cm": 1,
+    "target_distances_cm": 3,
 
-    "response_window_min_ms": 50,
-    "response_window_max_ms": 800,
-    "min_touch_duration_ms": 100,
+    "min_touch_duration_ms": 200,
 
     "target_touch_reward_enabled": true,
-    "fixation_touch_reward_duration_ms": 500,
     "reward_duration_ms": 1000,
 
     "level_up_threshold": 0.8,
@@ -37,28 +28,20 @@
 
     "levels": {
       "1": {
-        "reaction_window_duration_ms": 10000,
-        "fixation_touch_reward_radius_cm": 1,
-        "target_size_cm": 1,
-        "reward_delay_ms": 200
+        "target_size_cm": 1.5,
+        "reward_delay_ms": 0
       },
       "2": {
-        "reaction_window_duration_ms": 5000,
-        "fixation_touch_reward_radius_cm": 0.5,
-        "target_size_cm": 1,
-        "reward_delay_ms": 300
+        "target_size_cm": 1.5,
+        "reward_delay_ms": 0
       },
       "3": {
-        "reaction_window_duration_ms": 5000,
-        "fixation_touch_reward_radius_cm": 0.25,
-        "target_size_cm": 1,
-        "reward_delay_ms": 400
+        "target_size_cm": 1.5,
+        "reward_delay_ms": 0
       },
       "4": {
-        "reaction_window_duration_ms": 5000,
-        "fixation_touch_reward_radius_cm": 0,
-        "target_size_cm": 1,
-        "reward_delay_ms": 500
+        "target_size_cm": 1.5,
+        "reward_delay_ms": 0
       }
     }
   }

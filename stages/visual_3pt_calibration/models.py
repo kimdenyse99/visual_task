@@ -49,7 +49,6 @@ class Result(BaseModel):
     trial_end_time: float
 
     fixation_touch_latency_ms: float | None = Field(default=None, ge=0)
-    response_latency_ms: float | None = Field(default=None, ge=0)
 
     trial_reward_count: int = 0
     trial_manual_reward_count: int = 0
@@ -84,14 +83,6 @@ class Config(BaseModel):
     @property
     def fixation_duration_max_ms(self) -> int:
         return self.stored.fixation_duration_max_ms
-
-    @property
-    def visual_delay_ms(self) -> int:
-        return self.stored.visual_delay_ms
-
-    @property
-    def reaction_window_duration_ms(self) -> int:
-        return self.stored.levels[self.level].reaction_window_duration_ms
 
     @property
     def reward_delay_ms(self) -> int:
@@ -146,18 +137,6 @@ class Config(BaseModel):
         return self.stored.target_distances_cm * self.stored.pixels_per_cm
 
     @property
-    def touch_buffer_px(self) -> float:
-        return self.stored.touch_buffer_cm * self.stored.pixels_per_cm
-
-    @property
-    def response_window_min_ms(self) -> int:
-        return self.stored.response_window_min_ms
-
-    @property
-    def response_window_max_ms(self) -> int:
-        return self.stored.response_window_max_ms
-
-    @property
     def min_touch_duration_ms(self) -> int:
         return self.stored.min_touch_duration_ms
 
@@ -181,36 +160,9 @@ class Config(BaseModel):
     def target_touch_reward_enabled(self) -> bool:
         return self.stored.target_touch_reward_enabled
 
-    @property
-    def fixation_touch_reward_duration_ms(self) -> int:
-        return self.stored.fixation_touch_reward_duration_ms
-
-    @property
-    def fixation_touch_reward_radius_cm(self) -> float:
-        return self.stored.levels[self.level].fixation_touch_reward_radius_cm
-
-    @property
-    def fixation_touch_reward_radius_px(self) -> float:
-        return self.fixation_touch_reward_radius_cm * self.stored.pixels_per_cm
-
 
 class LevelConfig(BaseModel):
-    reaction_window_duration_ms: PositiveInt
     target_size_cm: float = Field(gt=0)
-
-    # Extra tolerance, in centimeters, measured outward from the edge of
-    # the visible fixation point (the bigger green circle, radius
-    # fixation_point_radius_cm) - NOT from its center point. A touch
-    # during the fixation phase qualifies for the (short)
-    # fixation_touch_reward_duration_ms reward if it lands within
-    # fixation_point_radius_cm + fixation_touch_reward_radius_cm of the
-    # fixation point's center. 0 means only a touch strictly within the
-    # visible green circle counts (still achievable by real input, since
-    # it's a circle with real size, not a single point); gradually
-    # shrink this per level (e.g. start with a very large value so any
-    # touch on screen qualifies, then narrow it down to 0) to shape the
-    # animal toward fixating precisely.
-    fixation_touch_reward_radius_cm: float = Field(ge=0)
 
     # Fixed per-level delay between a correct touch and the reward
     # actually being dispensed. The marmoset image stays visible for
@@ -229,8 +181,6 @@ class StoredConfig(BaseModel):
     inter_trial_duration_ms: PositiveInt
     reward_duration_ms: PositiveInt
 
-    visual_delay_ms: NonNegativeInt = 500
-
     # Fixation screen duration is randomized per-trial, uniformly drawn
     # from [fixation_duration_min_ms, fixation_duration_max_ms].
     fixation_duration_min_ms: NonNegativeInt = 150
@@ -247,17 +197,10 @@ class StoredConfig(BaseModel):
     # Distance from the fixation point to each of the 3 target positions,
     # as a physical distance (centimeters) converted to pixels via
     # pixels_per_cm. Previously a ratio of screen width; switched to a
-    # fixed physical distance for the same reason as touch_buffer_cm and
-    # target_size_cm - it stays consistent regardless of screen
-    # size/resolution, rather than scaling with screen width.
+    # fixed physical distance for the same reason as target_size_cm - it
+    # stays consistent regardless of screen size/resolution, rather than
+    # scaling with screen width.
     target_distances_cm: float = Field(default=3.0, gt=0)
-
-    # Extra hit-box margin around the target image, as a physical distance
-    # (centimeters) converted to pixels via pixels_per_cm. A fixed
-    # physical buffer better reflects real touch/finger imprecision than
-    # one scaled to the stimulus size, since that imprecision is roughly
-    # constant regardless of how large the target is drawn.
-    touch_buffer_cm: float = Field(default=1.0, ge=0)
 
     # Pixels-per-centimeter conversion factor for this display. There is
     # no DPI/physical-size lookup available in this environment, so this
@@ -265,17 +208,6 @@ class StoredConfig(BaseModel):
     # manual ruler-against-screen measurement: pixels_per_cm =
     # screen_width_px / screen_width_cm).
     pixels_per_cm: float = Field(default=56.0, gt=0)
-
-    # Only touches landing within this window after stimulus onset count
-    # as a scored ("correct"/"background") response. Touches before
-    # response_window_min_ms are treated as anticipatory and ignored;
-    # touches after response_window_max_ms are too late to be scored as
-    # correct, but the trial doesn't end until reaction_window_duration_ms
-    # (per-level, see LevelConfig) elapses - that's the hard cutoff that
-    # always ends the trial and moves on, scoring it as TIMEOUT if
-    # nothing was scored in time.
-    response_window_min_ms: NonNegativeInt = 50
-    response_window_max_ms: PositiveInt = 800
 
     # Minimum press duration (button/finger down -> up) for a touch to be
     # registered at all. Shorter presses (e.g. accidental brushes) are
@@ -305,37 +237,14 @@ class StoredConfig(BaseModel):
     # fading out. Only meaningful when show_gaze_trace is True.
     gaze_trace_duration_ms: NonNegativeInt = 500
 
-    # Whether a qualifying on-target touch during the stimulus phase
-    # (within response_window_min_ms..max_ms, held for at least
-    # min_touch_duration_ms) gives a reward. The trial is still scored as
-    # CORRECT/TIMEOUT/INCORRECT exactly the same either way - this only
-    # gates whether _give_reward() is actually called.
+    # Whether the reward is actually dispensed once the GIF stimulus
+    # appears (see Visual3ptCalibration._show_visual_stimulus /
+    # _on_correct). Every trial that reaches the stimulus phase resolves
+    # CORRECT either way - this only gates whether _give_reward() is
+    # actually called.
     target_touch_reward_enabled: bool = True
 
-    # Reward duration for a qualifying touch during the fixation phase
-    # (see LevelConfig.fixation_touch_reward_radius_cm for the per-level
-    # radius that qualifies). Shorter than reward_duration_ms by design,
-    # since this is meant to shape/encourage fixating rather than being
-    # the primary reward. Set to 0 to disable the fixation-phase reward
-    # entirely and only reward during the stimulus phase.
-    fixation_touch_reward_duration_ms: NonNegativeInt = 500
-
-    # Declared after response_window_max_ms so validate_levels (below)
-    # can cross-check each level's reaction_window_duration_ms against it
-    # via info.data - pydantic only exposes already-validated fields
-    # there, in declaration order.
     levels: dict[LevelID, LevelConfig]
-
-    @field_validator("response_window_max_ms")
-    @classmethod
-    def validate_response_window(cls, value: int, info: Any) -> int:
-        min_ms = info.data.get("response_window_min_ms")
-        if min_ms is not None and value <= min_ms:
-            raise ValueError(
-                "response_window_max_ms must be greater than "
-                "response_window_min_ms"
-            )
-        return value
 
     @field_validator("fixation_duration_max_ms")
     @classmethod
@@ -351,23 +260,9 @@ class StoredConfig(BaseModel):
     @field_validator("levels")
     @classmethod
     def validate_levels(
-        cls, levels: dict[LevelID, LevelConfig], info: Any
+        cls, levels: dict[LevelID, LevelConfig]
     ) -> dict[LevelID, LevelConfig]:
         validate_level_ids(levels)
-
-        response_window_max_ms = info.data.get("response_window_max_ms")
-        if response_window_max_ms is not None:
-            for level_id, level_config in levels.items():
-                if level_config.reaction_window_duration_ms <= response_window_max_ms:
-                    raise ValueError(
-                        f"level {level_id}: reaction_window_duration_ms "
-                        f"({level_config.reaction_window_duration_ms}) must "
-                        "be greater than response_window_max_ms "
-                        f"({response_window_max_ms}), otherwise the trial "
-                        "could end before a touch within the scored "
-                        "response window has a chance to register"
-                    )
-
         return levels
 
 

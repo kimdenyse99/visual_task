@@ -5,11 +5,11 @@ from time import monotonic, time
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 import pygame
+from animated_gif_sprite import AnimatedGifSprite
 from mxbiflow import get_mxbiflow
 from mxbiflow.assets import (
     Corner,
     CornerButton,
-    ImageSprite,
     ResultWidget,
     create_background,
 )
@@ -32,9 +32,9 @@ from pygame.draw import line as draw_line
 from pygame.sprite import Group, Sprite
 from rich.pretty import pprint
 
-from assets import M001, M002
+from assets import MARMOSET_IMAGE_PATHS
 from dwell import DwellTracker
-from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
+from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver, GazeSample
 from models import TouchEvent
 from trial_events import write_target_shown_event
 
@@ -162,8 +162,18 @@ class VisualStabilityTraining(Scene):
         # in parallel with, not instead of, ordinary mouse/finger events
         # handled in handle_event(). Useful for development/testing without
         # eye-tracking hardware: either input source can complete a trial.
+        def _get_gaze_sample() -> "GazeSample | None":
+            # EyeSample (mxbiflow.core.context.MXBIFlow.eye_sample's real
+            # return type) structurally satisfies GazeSample's Protocol
+            # (it has x: float and y: float) and this works correctly at
+            # runtime; the explicit return-type annotation here is only
+            # to satisfy static type checkers, which check a Callable
+            # parameter's return type more strictly than a plain
+            # structural/Protocol match on an ordinary value.
+            return self._mxbiflow.eye_sample
+
         self._gaze_driver = GazeDwellDriver(
-            lambda: self._mxbiflow.eye_sample,
+            _get_gaze_sample,
             self,
             already_down=GAZE_TOUCH_ID in self._trackers,
         )
@@ -314,7 +324,7 @@ class VisualStabilityTraining(Scene):
 
         self._sprites: Group[Sprite] = Group()
 
-        target_image = choice((M001, M002))
+        target_image = choice(MARMOSET_IMAGE_PATHS)
 
         screen_size = config.screen_size
         # (0, 0) +------------------------------> x = W
@@ -330,7 +340,7 @@ class VisualStabilityTraining(Scene):
 
         target_size_px = max(1, round(config.target_size_px))
 
-        self._correct_target = ImageSprite(target_image, target_size_px, target_center)
+        self._correct_target = AnimatedGifSprite(target_image, target_size_px, target_center)
 
         fixation_center = (
             screen_size.width * 3 // 4,
@@ -468,6 +478,16 @@ class VisualStabilityTraining(Scene):
         self._gaze_driver.update()
         self._check_all_trackers()
         self._prune_trace()
+        # AnimatedGifSprite needs an explicit per-frame update() call to
+        # advance its own playback - unlike a static ImageSprite, it does
+        # not animate on its own just by being drawn. Only advance it
+        # while the target is actually the visible stimulus ("test"
+        # phase): advancing it during "fixation"/"blank" too would let
+        # dt_s silently accumulate before the target ever appears, so
+        # playback would already be partway through on first showing
+        # rather than starting fresh from frame 0 each trial.
+        if self._phase == "test":
+            self._correct_target.update(dt_s)
 
     def draw(self, screen: "SurfaceType") -> None:
         screen.blit(self._background, (0, 0))
@@ -604,12 +624,25 @@ class VisualStabilityTraining(Scene):
         # whether this session's (possibly nonexistent) calibration
         # thinks gaze landed on it. See trial_events.py's module
         # docstring for the full reasoning.
+        # See _is_target_touch's own comment on this same pattern:
+        # self.rect is declared Rect | None by pygame's Sprite base
+        # class, but AnimatedGifSprite always assigns a real Rect
+        # unconditionally, so this is never actually None at runtime.
+        assert self._correct_target.rect is not None
+        target_center_px = self._correct_target.rect.center
         write_target_shown_event(
             self._mxbiflow,
             self._animal,
             self.name(),
             self._animal.trial_id,
-            self._correct_target.rect.center,
+            # pygame.Rect.center's declared type permits float
+            # coordinates (e.g. a Rect constructed from floats, or
+            # FRect); our own sprite construction always uses integer
+            # pixel positions so this is a no-op in practice, but the
+            # explicit round+cast keeps the actual value an int in the
+            # written data regardless, and satisfies
+            # write_target_shown_event's tuple[int, int] signature.
+            (round(target_center_px[0]), round(target_center_px[1])),
         )
         # Always schedule a hard close of the trial at
         # reaction_window_duration_ms after stimulus onset. This

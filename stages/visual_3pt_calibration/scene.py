@@ -1,4 +1,3 @@
-import math
 from pathlib import Path
 from random import choice, randint
 from shutil import copy2
@@ -10,7 +9,6 @@ from mxbiflow import get_mxbiflow
 from mxbiflow.assets import (
     Corner,
     CornerButton,
-    ImageSprite,
     ResultWidget,
     create_background,
 )
@@ -33,9 +31,10 @@ from pygame.draw import line as draw_line
 from pygame.sprite import Group, Sprite
 from rich.pretty import pprint
 
-from assets import M001, M002
+from animated_gif_sprite import AnimatedGifSprite
+from assets import MARMOSET_IMAGE_PATHS
 from dwell import DwellTracker
-from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
+from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver, GazeSample
 from models import TouchEvent
 from trial_events import write_target_shown_event
 
@@ -124,8 +123,6 @@ class Visual3ptCalibration(Scene):
         super().__init__()
 
         self._running = False
-        self._is_reaction_window_open = False
-        self._reaction_window_started_at_ms: float | None = None
 
         # Explicit phase model, following VisualTracing but with an
         # extra "blank" phase: "fixation" (fixation point visible) ->
@@ -168,8 +165,18 @@ class Visual3ptCalibration(Scene):
         # in parallel with, not instead of, ordinary mouse/finger events
         # handled in handle_event(). Useful for development/testing without
         # eye-tracking hardware: either input source can complete a trial.
+        def _get_gaze_sample() -> "GazeSample | None":
+            # EyeSample (mxbiflow.core.context.MXBIFlow.eye_sample's real
+            # return type) structurally satisfies GazeSample's Protocol
+            # (it has x: float and y: float) and this works correctly at
+            # runtime; the explicit return-type annotation here is only
+            # to satisfy static type checkers, which check a Callable
+            # parameter's return type more strictly than a plain
+            # structural/Protocol match on an ordinary value.
+            return self._mxbiflow.eye_sample
+
         self._gaze_driver = GazeDwellDriver(
-            lambda: self._mxbiflow.eye_sample,
+            _get_gaze_sample,
             self,
             already_down=GAZE_TOUCH_ID in self._trackers,
         )
@@ -320,7 +327,7 @@ class Visual3ptCalibration(Scene):
 
         self._sprites: Group[Sprite] = Group()
 
-        target_image = choice((M001, M002))
+        target_image = choice(MARMOSET_IMAGE_PATHS)
 
         screen_size = config.screen_size
         # Fixation point sits where the single target used to be in
@@ -364,7 +371,7 @@ class Visual3ptCalibration(Scene):
         target_center = choice(target_positions)
         target_size_px = max(1, round(config.target_size_px))
 
-        self._correct_target = ImageSprite(target_image, target_size_px, target_center)
+        self._correct_target = AnimatedGifSprite(target_image, target_size_px, target_center)
 
         self._fixation_point = FixationPoint(
             fixation_center,
@@ -497,6 +504,16 @@ class Visual3ptCalibration(Scene):
         self._gaze_driver.update()
         self._check_all_trackers()
         self._prune_trace()
+        # AnimatedGifSprite needs an explicit per-frame update() call to
+        # advance its own playback - unlike a static ImageSprite, it does
+        # not animate on its own just by being drawn. Only advance it
+        # while the target is actually the visible stimulus ("test"
+        # phase): advancing it during "fixation"/"blank" too would let
+        # dt_s silently accumulate before the target ever appears, so
+        # playback would already be partway through on first showing
+        # rather than starting fresh from frame 0 each trial.
+        if self._phase == "test":
+            self._correct_target.update(dt_s)
 
     def draw(self, screen: "SurfaceType") -> None:
         screen.blit(self._background, (0, 0))
@@ -518,21 +535,23 @@ class Visual3ptCalibration(Scene):
         self._sprites.add(self._fixation_point)
         self._fixation_shown_at_ms = monotonic() * 1000
         # The fixation phase has no timer-based expiry of its own: it
-        # only ends when a qualifying touch lands within
-        # fixation_touch_reward_radius_cm of the fixation point (see
-        # _on_fixation_touched), which gives the (short) fixation reward
-        # and then schedules the stimulus to appear after a randomized
-        # delay (fixation_duration_min_ms/max_ms). Without such a touch,
-        # the trial simply waits here indefinitely.
+        # only ends when a touch/gaze is detected anywhere on screen for
+        # at least min_touch_duration_ms (see _evaluate_tracker /
+        # _active_shape_test, which accepts any position during
+        # "fixation" - no accuracy check against the fixation point's
+        # actual position), which calls _on_fixation_touched and then
+        # schedules the stimulus to appear after a randomized delay
+        # (fixation_duration_min_ms/max_ms). Without such a touch, the
+        # trial simply waits here indefinitely.
 
     def _on_fixation_touched(self) -> None:
         self._result.fixation_touch_latency_ms = max(
             0.0, monotonic() * 1000 - self._fixation_shown_at_ms
         )
 
-        reward_duration_ms = self._config.fixation_touch_reward_duration_ms
-        if reward_duration_ms > 0:
-            self._give_reward(reward_duration_ms)
+        # No reward on fixation itself in this scheme - the single
+        # reward is given once the GIF stimulus actually appears (see
+        # _show_visual_stimulus), not here.
 
         # The stimulus doesn't appear immediately on a qualifying
         # fixation touch - it's delayed by a randomized amount
@@ -555,7 +574,6 @@ class Visual3ptCalibration(Scene):
         self._timer.after(fixation_duration_ms, self._play_stimulus)
 
     def _on_inter_trial(self) -> None:
-        self._is_reaction_window_open = False
         self._timer.after(
             self._config.inter_trial_duration_ms,
             self.quit,
@@ -620,9 +638,18 @@ class Visual3ptCalibration(Scene):
 
     # region views
     def _show_visual_stimulus(self) -> None:
+        # Simplified scheme: showing the GIF and giving the reward are
+        # the same event, unconditionally - there is no gaze-accuracy
+        # check on the GIF at all in this stage. A trial that reaches
+        # this point has already satisfied the fixation-phase dwell
+        # requirement (see _evaluate_tracker/_active_shape_test, which
+        # accepts any position on screen during "fixation"); from here
+        # the trial is simply:
+        # show GIF + reward together, hold briefly, go to the next
+        # trial. No reaction window, no on-target check, no
+        # CORRECT/INCORRECT/TIMEOUT distinction - every trial that gets
+        # this far resolves CORRECT (see _on_correct).
         self._phase = "test"
-        self._reaction_window_started_at_ms = monotonic() * 1000
-        self._is_reaction_window_open = True
         self._sprites.remove(self._fixation_point)
         self._sprites.add(
             [
@@ -630,64 +657,35 @@ class Visual3ptCalibration(Scene):
             ]
         )
         # Written at the exact moment the target becomes visible - not
-        # gated on any gaze judgment at all, unlike a "gaze correct"
-        # event. This trial's target is one of three fixed candidate
-        # positions, chosen randomly per trial in _init_visual_stimulus -
-        # each pair should be treated as its own independent known point
-        # when later used for calibration across the three positions, not
-        # assumed to be the same location across trials. Note also: for
-        # THIS stage specifically (multiple distinct candidate
-        # positions), a "gaze correct" event would have been doubly
-        # unusable for from-scratch calibration even setting aside the
-        # usual circularity problem - see trial_events.py's module
-        # docstring for why a multi-target stage's successful match
-        # doesn't unambiguously identify which position was actually
-        # shown without recording the position directly, which this event
-        # does via target_center.
+        # gated on any gaze judgment at all. This trial's target is one
+        # of three fixed candidate positions, chosen randomly per trial
+        # in _init_visual_stimulus - each pair should be treated as its
+        # own independent known point when later used for calibration
+        # across the three positions, not assumed to be the same
+        # location across trials.
+        # self.rect is declared Rect | None by pygame's Sprite base
+        # class, but AnimatedGifSprite always assigns a real Rect
+        # unconditionally, so this is never actually None at runtime -
+        # the assert exists only to make that guarantee explicit for the
+        # type checker.
+        assert self._correct_target.rect is not None
+        target_center_px = self._correct_target.rect.center
         write_target_shown_event(
             self._mxbiflow,
             self._animal,
             self.name(),
             self._animal.trial_id,
-            self._correct_target.rect.center,
-        )
-        # Always schedule a hard close of the trial at
-        # reaction_window_duration_ms after stimulus onset (unconditional
-        # - no enable flag). This guarantees the trial eventually
-        # proceeds to the next one even if the animal never touches, or
-        # touches outside the scored response window
-        # (response_window_min_ms..max_ms, see _handle_touch_event). A
-        # touch landing after response_window_max_ms but before this
-        # fires is simply not scored as correct - the window stays open
-        # for a possible later touch until this timer closes it.
-        self._timer.after(
-            self._config.reaction_window_duration_ms,
-            self._on_response_window_elapsed,
+            # pygame.Rect.center's declared type permits float
+            # coordinates (e.g. a Rect constructed from floats, or
+            # FRect); our own sprite construction always uses integer
+            # pixel positions so this is a no-op in practice, but the
+            # explicit round+cast keeps the actual value an int in the
+            # written data regardless, and satisfies
+            # write_target_shown_event's tuple[int, int] signature.
+            (round(target_center_px[0]), round(target_center_px[1])),
         )
 
-        # A press that is already down (e.g. held continuously from the
-        # fixation touch) is eligible to register on the target too:
-        # reset its dwell tracker so it starts accumulating fresh against
-        # the new shape, at whatever position it's currently at, rather
-        # than carrying over anything from the fixation point.
-        for touch_id, tracker in self._trackers.items():
-            tracker.reset()
-            if tracker.last_pos is not None:
-                self._evaluate_tracker(touch_id, tracker.last_pos)
-
-    def _on_response_window_elapsed(self) -> None:
-        if not self._is_reaction_window_open:
-            return
-
-        self._is_reaction_window_open = False
-        self._sprites.remove(
-            [
-                self._correct_target,
-            ]
-        )
-        self._result.result = ResultEnum.TIMEOUT
-
-        self._on_inter_trial()
+        self._on_correct()
 
     def _result_summary(self) -> str:
         level = self._result.animal.level
@@ -777,45 +775,21 @@ class Visual3ptCalibration(Scene):
             if tracker.last_pos is not None:
                 self._evaluate_tracker(touch_id, tracker.last_pos)
 
-    def _is_inside_fixation(self, pos: tuple[int, int]) -> bool:
-        # fixation_touch_reward_radius_px is measured outward from the
-        # edge of the visible green circle, not from its center point: 0
-        # means only a touch strictly within that circle counts; any
-        # larger value extends the tolerance zone that many pixels
-        # beyond its circumference. This keeps 0 achievable by real
-        # input (landing anywhere inside a visibly-sized circle), rather
-        # than requiring a touch at one exact pixel.
-        qualifying_radius_px = (
-            self._config.fixation_point_radius_px
-            + self._config.fixation_touch_reward_radius_px
-        )
-        fixation_center = self._fixation_point.rect.center
-        distance_px = math.hypot(
-            pos[0] - fixation_center[0], pos[1] - fixation_center[1]
-        )
-        return distance_px <= qualifying_radius_px
-
-    def _is_target_touch(self, pos: tuple[int, int]) -> bool:
-        rect = self._correct_target.rect
-        if rect is None:
-            return False
-
-        buffer_px = round(self._config.touch_buffer_px)
-        hit_box = rect.inflate(buffer_px, buffer_px)
-        return hit_box.collidepoint(pos)
-
     def _active_shape_test(self, pos: tuple[int, int]) -> bool | None:
         """Returns whether pos currently qualifies as "inside" whatever
         shape a touch event is allowed to register against, or None if
         there is nothing to register against right now (phase is
-        "blank", or "test" after the reaction window has already
-        closed)."""
+        "blank" or "test" - this stage's simplified scheme has no
+        gaze-accuracy check at all once the GIF stimulus is shown; see
+        _show_visual_stimulus, which gives the reward unconditionally
+        the moment the GIF appears, with no touch/dwell check
+        afterward). During "fixation", any position on screen qualifies
+        - like visual_stability_training's fixation phase, this stage no
+        longer checks gaze/touch accuracy against the fixation point's
+        actual position at all; only that something was detected for at
+        least min_touch_duration_ms (see _evaluate_tracker) matters."""
         if self._phase == "fixation":
-            return self._is_inside_fixation(pos)
-        if self._phase == "test":
-            if not self._is_reaction_window_open:
-                return None
-            return self._is_target_touch(pos)
+            return True
         return None
 
     def _evaluate_tracker(self, touch_id: int, pos: tuple[int, int]) -> None:
@@ -842,66 +816,14 @@ class Visual3ptCalibration(Scene):
             self._handle_touch_event(pos)
 
     def _handle_touch_event(self, pos: tuple[int, int]) -> None:
+        # Only the fixation phase ever registers a touch event in this
+        # stage's simplified scheme: once the GIF stimulus appears, no
+        # further touch/gaze judgment happens at all (see
+        # _active_shape_test, which only ever returns non-None during
+        # "fixation") - the reward is already given unconditionally the
+        # moment the GIF appears (_show_visual_stimulus -> _on_correct).
         if self._phase == "fixation":
             self._on_fixation_touched()
-            return
-
-        if not self._is_reaction_window_open:
-            return
-
-        started_at_ms = self._reaction_window_started_at_ms
-        if started_at_ms is None:
-            raise RuntimeError("Reaction window start time is unavailable")
-
-        self._is_reaction_window_open = False
-
-        latency_ms = max(0.0, monotonic() * 1000 - started_at_ms)
-        is_on_target = self._is_target_touch(pos)
-        is_in_response_window = (
-            self._config.response_window_min_ms
-            <= latency_ms
-            <= self._config.response_window_max_ms
-        )
-
-        # By the time this is called, the touch has already been held
-        # stable for at least min_touch_duration_ms (see
-        # _evaluate_tracker) - that part of the gate is implicit here.
-        # Any qualifying touch at all - on target or off - ends the
-        # trial immediately. Only the complete absence of one waits out
-        # reaction_window_duration_ms (_on_response_window_elapsed).
-        #
-        # Classification:
-        #   on target  + within [min,max] response window -> CORRECT
-        #   on target  + outside the response window        -> TIMEOUT
-        #     (an on-target touch that's mistimed is read as the animal
-        #     anticipating/guessing rather than a genuine miss, so it's
-        #     excluded from the correct-rate rather than counted as an
-        #     error)
-        #   off target (any timing)                         -> ERROR
-        #
-        # Only an INCORRECT or TIMEOUT outcome removes the target
-        # immediately - a CORRECT touch keeps it visible through the
-        # reward delay and reward itself (see _on_correct), so the
-        # animal sees the marmoset stay on screen while being rewarded,
-        # reinforcing that looking at it specifically is what earns the
-        # reward.
-        if not is_on_target:
-            self._sprites.remove(
-                [
-                    self._correct_target,
-                ]
-            )
-            self._on_incorrect()
-        elif is_in_response_window:
-            self._result.response_latency_ms = latency_ms
-            self._on_correct()
-        else:
-            self._sprites.remove(
-                [
-                    self._correct_target,
-                ]
-            )
-            self._on_timeout()
 
     def _prune_trace(self) -> None:
         max_age_ms = self._config.gaze_trace_duration_ms
@@ -1007,16 +929,6 @@ class Visual3ptCalibration(Scene):
                 self._correct_target,
             ]
         )
-        self._on_inter_trial()
-
-    def _on_incorrect(self):
-        self._result.result = ResultEnum.INCORRECT
-
-        self._on_inter_trial()
-
-    def _on_timeout(self):
-        self._result.result = ResultEnum.TIMEOUT
-
         self._on_inter_trial()
 
     def _cancel_unfinished_trial(self) -> None:

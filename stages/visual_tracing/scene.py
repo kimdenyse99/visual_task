@@ -32,7 +32,7 @@ from pygame.sprite import Group, Sprite
 from rich.pretty import pprint
 
 from dwell import DwellTracker
-from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
+from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver, GazeSample
 from models import TouchEvent
 from trial_events import write_target_shown_event
 
@@ -173,8 +173,18 @@ class VisualTracing(Scene):
         # in parallel with, not instead of, ordinary mouse/finger events
         # handled in handle_event(). Useful for development/testing without
         # eye-tracking hardware: either input source can complete a trial.
+        def _get_gaze_sample() -> "GazeSample | None":
+            # EyeSample (mxbiflow.core.context.MXBIFlow.eye_sample's real
+            # return type) structurally satisfies GazeSample's Protocol
+            # (it has x: float and y: float) and this works correctly at
+            # runtime; the explicit return-type annotation here is only
+            # to satisfy static type checkers, which check a Callable
+            # parameter's return type more strictly than a plain
+            # structural/Protocol match on an ordinary value.
+            return self._mxbiflow.eye_sample
+
         self._gaze_driver = GazeDwellDriver(
-            lambda: self._mxbiflow.eye_sample,
+            _get_gaze_sample,
             self,
             already_down=GAZE_TOUCH_ID in self._trackers,
         )

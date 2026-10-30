@@ -40,6 +40,8 @@ reserved id, not a replacement for the event-driven path.
 from time import monotonic
 from typing import Callable, Protocol
 
+from mxbiflow.utils.logger import logger
+
 # Reserved synthetic touch id for gaze, distinct from mouse (-1) and real
 # finger ids (>= 0, assigned by SDL).
 GAZE_TOUCH_ID = -2
@@ -51,8 +53,24 @@ DEFAULT_GAZE_LOST_GRACE_MS = 5000
 
 
 class GazeSample(Protocol):
-    x: float
-    y: float
+    """Structurally matches anything with readable x/y float coordinates.
+
+    Declared as read-only properties, not plain mutable attributes:
+    GazeDwellDriver only ever reads x/y off a sample, never assigns to
+    them, and mxbiflow's own EyeSample (the real type eye_sample()
+    returns) is an immutable frozen dataclass. A Protocol with plain
+    mutable attributes requires the implementing type's attributes to
+    also be mutable/invariant to satisfy it; declaring these as
+    read-only properties instead makes the protocol covariant here,
+    which is what actually matches how this is used and lets a frozen
+    dataclass like EyeSample satisfy it.
+    """
+
+    @property
+    def x(self) -> float: ...
+
+    @property
+    def y(self) -> float: ...
 
 
 class _GazeDwellScene(Protocol):
@@ -122,8 +140,15 @@ class GazeDwellDriver:
             self._lost_since_ms = None
             self._abandon_reported = False
             self._last_pos = pos
+            logger.debug("gaze acquired at ({}, {})", pos[0], pos[1])
             self._scene._on_press(GAZE_TOUCH_ID, pos)
             return
+
+        if self._lost_since_ms is not None:
+            logger.debug(
+                "gaze recovered after {:.0f} ms, resuming dwell",
+                monotonic() * 1000 - self._lost_since_ms,
+            )
 
         # Gaze is back after a momentary loss: resume in place rather than
         # re-pressing, so the dwell clock is not restarted.
@@ -139,6 +164,9 @@ class GazeDwellDriver:
         now_ms = monotonic() * 1000
         if self._lost_since_ms is None:
             self._lost_since_ms = now_ms
+            logger.debug(
+                "gaze lost, starting {:.0f} ms grace period", self._lost_grace_ms
+            )
             return
 
         elapsed_ms = now_ms - self._lost_since_ms
@@ -154,6 +182,10 @@ class GazeDwellDriver:
         # is simply abandoned, same as any other externally-forced end of
         # trial. This does not imply the animal has left the session - no
         # detector/RFID event is touched here.
+        logger.warning(
+            "gaze lost for {:.0f} ms (grace period exceeded); abandoning trial",
+            elapsed_ms,
+        )
         if self._last_pos is not None:
             self._scene._on_release(GAZE_TOUCH_ID, self._last_pos)
 
