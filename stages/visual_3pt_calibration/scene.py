@@ -37,6 +37,7 @@ from assets import MARMOSET_IMAGE_PATHS
 from dwell import DwellTracker
 from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver, GazeSample
 from models import TouchEvent
+from stimulus_events import StimulusEvents
 from trial_events import write_target_shown_event
 
 from .models import (
@@ -138,6 +139,7 @@ class Visual3ptCalibration(Scene):
         self._phase: Literal["blank", "fixation", "test"] = "blank"
 
         self._mxbiflow = get_mxbiflow()
+        self._stimulus_events = StimulusEvents(self._mxbiflow)
         self._rewarder = self._mxbiflow.mxbi.rewarder
         self._timer = self._mxbiflow.timer
 
@@ -350,6 +352,7 @@ class Visual3ptCalibration(Scene):
         self._sprites: Group[Sprite] = Group()
 
         target_image = choice(MARMOSET_IMAGE_PATHS)
+        self._target_asset_name = target_image.name
 
         screen_size = config.screen_size
         # Fixation point sits where the single target used to be in
@@ -446,6 +449,7 @@ class Visual3ptCalibration(Scene):
         self._on_trial_start()
 
     def quit(self) -> None:
+        self._stimulus_events.clear()
         # Capture this before _cancel_unfinished_trial() can overwrite
         # it: a trial that reached its own natural conclusion (correct,
         # incorrect, or timeout) will already have a resolved result by
@@ -541,6 +545,10 @@ class Visual3ptCalibration(Scene):
         screen.blit(self._background, (0, 0))
 
         self._sprites.draw(screen)
+        self._stimulus_events.present(
+            self._sprites, self._fixation_point, self._correct_target,
+            self._target_asset_name,
+        )
         if self._config.show_gaze_trace:
             self._draw_trace(screen)
         self._result_widget.draw(screen)

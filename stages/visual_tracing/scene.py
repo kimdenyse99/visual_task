@@ -34,6 +34,7 @@ from rich.pretty import pprint
 from dwell import DwellTracker
 from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver, GazeSample
 from models import TouchEvent
+from stimulus_events import StimulusEvents
 from trial_events import write_target_shown_event
 
 from .models import (
@@ -142,6 +143,7 @@ class VisualTracing(Scene):
         self._reaction_window_started_at_ms: float | None = None
 
         self._mxbiflow = get_mxbiflow()
+        self._stimulus_events = StimulusEvents(self._mxbiflow)
         self._rewarder = self._mxbiflow.mxbi.rewarder
         self._timer = self._mxbiflow.timer
 
@@ -445,6 +447,7 @@ class VisualTracing(Scene):
         self._on_trial_start()
 
     def quit(self) -> None:
+        self._stimulus_events.clear()
         # Capture this before _cancel_unfinished_trial() can overwrite it:
         # a trial that reached its own natural conclusion (correct,
         # incorrect, or timeout) will already have a resolved result by
@@ -532,6 +535,9 @@ class VisualTracing(Scene):
         screen.blit(self._background, (0, 0))
 
         self._sprites.draw(screen)
+        self._stimulus_events.present(
+            self._sprites, self._fixation_sprite, self._target_sprite,
+        )
         self._draw_trace(screen)
         self._result_widget.draw(screen)
         for button in self._control_buttons:

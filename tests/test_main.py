@@ -22,7 +22,7 @@ class StartupFlowTests(unittest.TestCase):
             },
             {
                 "visual_stability_training",
-                "visual_3pt_calibration",
+                "visual3pt_calibration",
                 "visual_tracing",
             },
         )

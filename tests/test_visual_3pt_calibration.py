@@ -19,6 +19,7 @@ from pygame import (
 )
 
 from dwell import DwellTracker
+from stimulus_events import StimulusEvents
 from stages.visual_3pt_calibration.models import (
     Config,
     LevelConfig,
@@ -79,8 +80,10 @@ def make_scene() -> Any:
     scene._timer = Mock()
     scene._rewarder = Mock()
     scene._mxbiflow = Mock()
+    scene._stimulus_events = StimulusEvents(scene._mxbiflow)
     scene._animal = Mock()
     scene._animal.trial_id = 1
+    scene._animal.current_stage.level = 1
     scene._animal.name = "test-animal"
     scene._running = True
     scene._phase = "blank"
@@ -716,7 +719,8 @@ class SettlementTests(unittest.TestCase):
 
 class StructureConsistencyTests(unittest.TestCase):
     def test_scene_name_is_canonical(self) -> None:
-        self.assertEqual(Visual3ptCalibration.name(), "visual_3pt_calibration")
+        # Preserve the framework's registered name for existing session configs.
+        self.assertEqual(Visual3ptCalibration.name(), "visual3pt_calibration")
 
 
 class RealStimulusTests(unittest.TestCase):
