@@ -391,7 +391,7 @@ class Visual3ptCalibration(Scene):
         target_positions = (
             (fixation_center[0] - offset_px, fixation_center[1] - offset_px),  # left
             (fixation_center[0] - offset_px, fixation_center[1] + offset_px),  # right
-            (fixation_center[0] + round(config.target_size_px // 2) + round(config.fixation_point_radius_px), fixation_center[1]),  # above
+            (screen_size.width * 3 // 4, screen_size.height // 2,),  # above
         )
         target_center = choice(target_positions)
         target_size_px = max(1, round(config.target_size_px))
