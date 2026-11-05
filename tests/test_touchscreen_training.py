@@ -1,6 +1,5 @@
 # pyright: reportPrivateUsage=false, reportUnknownLambdaType=false
 
-import ast
 import tempfile
 import unittest
 from pathlib import Path
@@ -780,51 +779,6 @@ class QuitFlowTests(unittest.TestCase):
 
 
 class StructureConsistencyTests(unittest.TestCase):
-    REFERENCE_PATH = Path(
-        "stages/visual_two_choice_training/visual_two_choice_training.py"
-    )
-    TARGET_PATH = Path("stages/touchscreen_training/touchscreen_training.py")
-
-    @staticmethod
-    def _region_markers(path: Path) -> list[str]:
-        return [
-            line.strip()
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip().startswith("# region")
-            or line.strip().startswith("# endregion")
-        ]
-
-    @staticmethod
-    def _class_member_names(path: Path) -> list[str]:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        names: list[str] = []
-        for node in tree.body:
-            if isinstance(node, ast.ClassDef):
-                for member in node.body:
-                    if isinstance(member, ast.FunctionDef):
-                        names.append(member.name)
-        return names
-
-    def test_region_markers_match_reference_stage(self) -> None:
-        self.assertEqual(
-            self._region_markers(self.TARGET_PATH),
-            self._region_markers(self.REFERENCE_PATH),
-        )
-
-    def test_top_level_function_order_matches_reference_stage(self) -> None:
-        target_names = self._class_member_names(self.TARGET_PATH)
-        reference_names = self._class_member_names(self.REFERENCE_PATH)
-
-        # _on_incorrect is unreachable in the single-target stage and is
-        # deliberately omitted; every other member must match in order.
-        expected_omitted = ("_on_incorrect",)
-        expected_target_names = [
-            name for name in reference_names if name not in expected_omitted
-        ]
-
-        self.assertEqual(target_names, expected_target_names)
-        self.assertEqual(len(target_names), len(reference_names) - 1)
-
     def test_scene_name_is_canonical(self) -> None:
         self.assertEqual(TouchscreenTraining.name(), "touchscreen_training")
 

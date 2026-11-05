@@ -11,8 +11,6 @@ from mxbiflow.models.animal import AnimalBaseInfo
 from pydantic import ValidationError
 from pygame import (
     FINGERDOWN,
-    FINGERMOTION,
-    FINGERUP,
     MOUSEBUTTONDOWN,
     MOUSEBUTTONUP,
     MOUSEMOTION,
@@ -21,6 +19,8 @@ from pygame import (
 )
 
 from assets import M001
+from dwell import DwellTracker
+from stages.visual_3pt_calibration import scene as scene_module
 from stages.visual_3pt_calibration.models import (
     Config,
     LevelConfig,
@@ -33,7 +33,6 @@ from stages.visual_3pt_calibration.models import (
 from stages.visual_3pt_calibration.scene import (
     FixationPoint,
     Visual3ptCalibration,
-    _ActiveTouch,
 )
 
 
@@ -111,7 +110,11 @@ def make_scene() -> Any:
     scene._reaction_window_started_at_ms = None
     scene._fixation_shown_at_ms = None
     scene._phase = "blank"
-    scene._active_touches = {}
+    scene._trackers = {}
+    scene._trajectories = {}
+    scene._trace_points = []
+    scene._running = True
+    scene._gaze_driver = Mock()
     scene._control_buttons = []
     scene._mxbiflow = SimpleNamespace(
         mxbi=SimpleNamespace(screen_size=Screen(width=1920, height=1080))
@@ -269,7 +272,7 @@ class TrialInitializationTests(unittest.TestCase):
         self.assertIs(scene._result, result)
         self.assertIs(scene._result_widget, result_widget)
         self.assertEqual(scene._phase, "blank")
-        self.assertEqual(scene._active_touches, {})
+        self.assertEqual(scene._trackers, {})
 
     def test_start_runs_trial_start(self) -> None:
         scene = make_scene()
@@ -397,10 +400,6 @@ class ConfigTests(unittest.TestCase):
         # touch_buffer_cm=1.0 * pixels_per_cm=46.0 = 46.0
         self.assertAlmostEqual(make_config().touch_buffer_px, 46.0)
 
-    def test_touch_tolerance_radius_px_converts_cm_to_pixels(self) -> None:
-        # touch_tolerance_radius_cm=0.5 * pixels_per_cm=46.0 = 23.0
-        self.assertAlmostEqual(make_config().touch_tolerance_radius_px, 23.0)
-
     def test_target_distances_px_converts_cm_to_pixels(self) -> None:
         # target_distances_cm=2.6 * pixels_per_cm=46.0 = 119.6
         self.assertAlmostEqual(make_config().target_distances_px, 119.6)
@@ -440,7 +439,7 @@ class ConfigTests(unittest.TestCase):
             ):
                 first = scene._init_config(animal, mxbiflow)
                 snapshot = (
-                    root / "animal-session" / "visual_3pt_calibration" / "config.json"
+                    root / "animal-session" / "visual3pt_calibration" / "config.json"
                 )
                 self.assertTrue(snapshot.exists())
                 self.assertEqual(snapshot.read_text(encoding="utf-8"), source_text)
@@ -451,18 +450,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(first.target_size_cm, 1.0)
         self.assertTrue(first.is_twitter_trial)
         self.assertEqual(second.animal, "test-animal")
-
-
-class ActiveTouchTests(unittest.TestCase):
-    def test_initializes_at_the_given_position_and_time(self) -> None:
-        touch = _ActiveTouch((10, 20), 1000.0)
-
-        self.assertEqual(touch.start_pos, (10, 20))
-        self.assertEqual(touch.start_ms, 1000.0)
-        self.assertEqual(touch.reference_pos, (10, 20))
-        self.assertEqual(touch.reference_ms, 1000.0)
-        self.assertEqual(touch.last_pos, (10, 20))
-        self.assertFalse(touch.fired)
 
 
 class FixationPointTests(unittest.TestCase):
@@ -508,17 +495,15 @@ class TrialStartTests(unittest.TestCase):
 
 
 class InputModalityTests(unittest.TestCase):
-    """Covers press/motion/release across mouse and finger, and
-    multi-touch tracking."""
+    """Covers mouse press/motion/release, the touchscreen penalty, and
+    tracking several inputs at once."""
 
-    def test_mouse_press_registers_an_active_touch(self) -> None:
+    def test_mouse_press_registers_a_tracker(self) -> None:
         scene = make_scene()
-        scene._handle_touch_event = Mock()
 
         scene.handle_event(Event(MOUSEBUTTONDOWN, button=1, pos=(10, 20)))
 
-        self.assertIn(-1, scene._active_touches)
-        self.assertEqual(scene._active_touches[-1].start_pos, (10, 20))
+        self.assertIn(-1, scene._trackers)
 
     def test_mouse_click_consumed_by_control_button_does_not_register(self) -> None:
         scene = make_scene()
@@ -528,19 +513,18 @@ class InputModalityTests(unittest.TestCase):
 
         scene.handle_event(Event(MOUSEBUTTONDOWN, button=1, pos=(10, 20)))
 
-        self.assertEqual(scene._active_touches, {})
+        self.assertEqual(scene._trackers, {})
 
-    def test_mouse_release_removes_the_active_touch_and_logs_it(self) -> None:
+    def test_mouse_release_removes_the_tracker_and_logs_it(self) -> None:
         scene = make_scene()
-        scene._handle_touch_event = Mock()
 
         scene.handle_event(Event(MOUSEBUTTONDOWN, button=1, pos=(10, 20)))
-        scene.handle_event(Event(MOUSEBUTTONUP, button=1, pos=(10, 20)))
+        scene.handle_event(Event(MOUSEBUTTONUP, button=1, pos=(15, 25)))
 
-        self.assertEqual(scene._active_touches, {})
+        self.assertEqual(scene._trackers, {})
         self.assertEqual(len(scene._result.touch_event), 1)
-        self.assertEqual(scene._result.touch_event[0].x, 10)
-        self.assertEqual(scene._result.touch_event[0].y, 20)
+        self.assertEqual(scene._result.touch_event[0].x, 15)
+        self.assertEqual(scene._result.touch_event[0].y, 25)
 
     def test_release_without_matching_press_is_a_no_op(self) -> None:
         scene = make_scene()
@@ -551,275 +535,144 @@ class InputModalityTests(unittest.TestCase):
 
     def test_mouse_motion_only_tracked_while_a_touch_is_active(self) -> None:
         scene = make_scene()
-        scene._handle_touch_event = Mock()
-        scene._phase = "fixation"
 
         scene.handle_event(Event(MOUSEMOTION, pos=(50, 50)))
-        self.assertEqual(scene._active_touches, {})
+        self.assertEqual(scene._trackers, {})
 
         scene.handle_event(Event(MOUSEBUTTONDOWN, button=1, pos=(10, 20)))
         scene.handle_event(Event(MOUSEMOTION, pos=(50, 50)))
-        self.assertEqual(scene._active_touches[-1].last_pos, (50, 50))
+        self.assertEqual(scene._trajectories[-1][-1][:2], (50, 50))
 
-    def test_finger_press_is_converted_to_screen_pixels(self) -> None:
+    def test_finger_touch_abandons_the_trial(self) -> None:
         scene = make_scene()
-        scene._handle_touch_event = Mock()
-        scene._mxbiflow = SimpleNamespace(
-            mxbi=SimpleNamespace(screen_size=Screen(width=1000, height=500))
-        )
+        scene._on_touch_penalized = Mock()
 
         scene.handle_event(Event(FINGERDOWN, finger_id=7, x=0.5, y=0.25))
 
-        self.assertIn(7, scene._active_touches)
-        self.assertEqual(scene._active_touches[7].start_pos, (500, 125))
+        scene._on_touch_penalized.assert_called_once_with()
+        self.assertEqual(scene._trackers, {})
 
-    def test_finger_release_is_converted_to_screen_pixels(self) -> None:
+    def test_multiple_simultaneous_inputs_are_tracked_independently(self) -> None:
         scene = make_scene()
-        scene._handle_touch_event = Mock()
-        scene._mxbiflow = SimpleNamespace(
-            mxbi=SimpleNamespace(screen_size=Screen(width=1000, height=500))
-        )
-
-        scene.handle_event(Event(FINGERDOWN, finger_id=7, x=0.5, y=0.25))
-        scene.handle_event(Event(FINGERUP, finger_id=7, x=0.5, y=0.25))
-
-        self.assertEqual(scene._active_touches, {})
-        self.assertEqual(scene._result.touch_event[0].x, 500)
-        self.assertEqual(scene._result.touch_event[0].y, 125)
-
-    def test_finger_motion_only_tracked_for_a_matching_active_finger(self) -> None:
-        scene = make_scene()
-        scene._handle_touch_event = Mock()
-        scene._phase = "fixation"
-        scene._mxbiflow = SimpleNamespace(
-            mxbi=SimpleNamespace(screen_size=Screen(width=1000, height=500))
-        )
-
-        scene.handle_event(Event(FINGERMOTION, finger_id=9, x=0.1, y=0.1))
-        self.assertEqual(scene._active_touches, {})
-
-        scene.handle_event(Event(FINGERDOWN, finger_id=7, x=0.5, y=0.25))
-        scene.handle_event(Event(FINGERMOTION, finger_id=7, x=0.6, y=0.3))
-        self.assertEqual(scene._active_touches[7].last_pos, (600, 150))
-
-    def test_multiple_simultaneous_touches_are_tracked_independently(self) -> None:
-        scene = make_scene()
-        scene._handle_touch_event = Mock()
-        scene._mxbiflow = SimpleNamespace(
-            mxbi=SimpleNamespace(screen_size=Screen(width=1000, height=500))
-        )
 
         scene.handle_event(Event(MOUSEBUTTONDOWN, button=1, pos=(10, 20)))
-        scene.handle_event(Event(FINGERDOWN, finger_id=3, x=0.2, y=0.2))
-        scene.handle_event(Event(FINGERDOWN, finger_id=4, x=0.8, y=0.8))
+        scene._on_press(3, (30, 40))
 
-        self.assertEqual(set(scene._active_touches.keys()), {-1, 3, 4})
+        self.assertEqual(set(scene._trackers), {-1, 3})
 
         scene.handle_event(Event(MOUSEBUTTONUP, button=1, pos=(10, 20)))
-        self.assertEqual(set(scene._active_touches.keys()), {3, 4})
-
-    # TODO(gaze): re-enable once GAZEBUTTONDOWN/UP/MOTION are allocated
-    # and a gaze driver actually posts them (see scene.py).
+        self.assertEqual(set(scene._trackers), {3})
 
 
-class TouchStabilityTests(unittest.TestCase):
-    """Covers _exceeds_tolerance, _evaluate_touch, and
-    _check_pending_touches - the per-frame re-evaluation mechanism."""
+class DwellTests(unittest.TestCase):
+    """dwell.DwellTracker holds the timing; these cover how the scene uses it."""
 
-    def test_touch_within_tolerance_radius_does_not_exceed(self) -> None:
-        scene = make_scene()
-
-        # touch_tolerance_radius_px = 0.5cm * 46.0px/cm = 23px
-        self.assertFalse(scene._exceeds_tolerance((100, 100), (110, 100)))
-
-    def test_touch_beyond_tolerance_radius_exceeds(self) -> None:
-        scene = make_scene()
-
-        self.assertTrue(scene._exceeds_tolerance((100, 100), (200, 100)))
-
-    def test_touch_at_exactly_the_tolerance_boundary_does_not_exceed(self) -> None:
-        scene = make_scene()
-
-        # Exactly 23px away (0.5cm * 46.0px/cm)
-        self.assertFalse(scene._exceeds_tolerance((100, 100), (123, 100)))
-
-    def test_evaluate_touch_does_not_refire_once_fired(self) -> None:
+    def test_evaluate_tracker_requires_the_min_duration(self) -> None:
         scene = make_scene()
         scene._phase = "fixation"
         scene._handle_touch_event = Mock()
-        touch = _ActiveTouch((10, 20), 1000.0)
-        touch.fired = True
+        scene._fixation_point.rect.center = (10, 10)
+        scene._trackers[-1] = DwellTracker(touch_id=-1)
 
-        scene._evaluate_touch(-1, touch)
+        scene._evaluate_tracker(-1, (10, 10))
 
         scene._handle_touch_event.assert_not_called()
 
-    def test_evaluate_touch_does_not_accumulate_time_while_blank(self) -> None:
+    def test_evaluate_tracker_fires_once_the_min_duration_elapses(self) -> None:
+        scene = make_scene()
+        scene._phase = "fixation"
+        scene._handle_touch_event = Mock()
+        scene._fixation_point.rect.center = (10, 10)
+        scene._trackers[-1] = DwellTracker(touch_id=-1)
+
+        with patch("dwell.monotonic", return_value=1.0):
+            scene._evaluate_tracker(-1, (10, 10))
+        with patch("dwell.monotonic", return_value=1.2):
+            scene._evaluate_tracker(-1, (10, 10))
+
+        scene._handle_touch_event.assert_called_once_with((10, 10))
+
+    def test_evaluate_tracker_does_not_refire_once_fired(self) -> None:
+        scene = make_scene()
+        scene._phase = "fixation"
+        scene._handle_touch_event = Mock()
+        scene._trackers[-1] = DwellTracker(touch_id=-1, fired=True)
+
+        scene._evaluate_tracker(-1, (1440, 540))
+
+        scene._handle_touch_event.assert_not_called()
+
+    def test_evaluate_tracker_does_not_accumulate_time_while_blank(self) -> None:
         scene = make_scene()
         scene._phase = "blank"
-        scene._handle_touch_event = Mock()
-        touch = _ActiveTouch((10, 20), 1000.0)
+        tracker = DwellTracker(touch_id=-1)
+        scene._trackers[-1] = tracker
 
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=5.0,
-        ):
-            scene._evaluate_touch(-1, touch)
+        scene._evaluate_tracker(-1, (10, 10))
 
-        self.assertFalse(touch.fired)
-        scene._handle_touch_event.assert_not_called()
-        self.assertEqual(touch.reference_ms, 5000)
+        self.assertIsNone(tracker.inside_since_ms)
 
-    def test_evaluate_touch_requires_min_duration(self) -> None:
+    def test_check_all_trackers_evaluates_those_with_a_known_position(self) -> None:
         scene = make_scene()
-        scene._phase = "fixation"
-        scene._handle_touch_event = Mock()
-        touch = _ActiveTouch((10, 20), 1000.0)
+        scene._evaluate_tracker = Mock()
+        scene._trackers = {
+            -1: DwellTracker(touch_id=-1, last_pos=(5, 5)),
+            0: DwellTracker(touch_id=0),
+        }
 
-        # min_touch_duration_ms=100 in the test config; only 50ms elapsed
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=1.05,
-        ):
-            scene._evaluate_touch(-1, touch)
+        scene._check_all_trackers()
 
-        self.assertFalse(touch.fired)
-        scene._handle_touch_event.assert_not_called()
-
-    def test_evaluate_touch_fires_once_min_duration_elapses(self) -> None:
-        scene = make_scene()
-        scene._phase = "fixation"
-        scene._handle_touch_event = Mock()
-        touch = _ActiveTouch((10, 20), 1000.0)
-
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=1.1,
-        ):
-            scene._evaluate_touch(-1, touch)
-
-        self.assertTrue(touch.fired)
-        scene._handle_touch_event.assert_called_once_with((10, 20))
-
-    def test_motion_within_tolerance_keeps_the_same_reference(self) -> None:
-        scene = make_scene()
-        scene._phase = "fixation"
-        scene._handle_touch_event = Mock()
-        scene._active_touches[-1] = _ActiveTouch((100, 100), 1000.0)
-
-        scene._on_motion(-1, (110, 100))
-
-        self.assertEqual(scene._active_touches[-1].reference_pos, (100, 100))
-
-    def test_motion_beyond_tolerance_re_anchors_the_reference(self) -> None:
-        scene = make_scene()
-        scene._phase = "fixation"
-        scene._handle_touch_event = Mock()
-        scene._active_touches[-1] = _ActiveTouch((100, 100), 1000.0)
-
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=2.0,
-        ):
-            scene._on_motion(-1, (300, 100))
-
-        active = scene._active_touches[-1]
-        self.assertEqual(active.reference_pos, (300, 100))
-        self.assertEqual(active.reference_ms, 2000)
-
-    def test_motion_on_already_fired_touch_does_not_refire_or_move_reference(
-        self,
-    ) -> None:
-        scene = make_scene()
-        scene._phase = "fixation"
-        scene._handle_touch_event = Mock()
-        touch = _ActiveTouch((100, 100), 1000.0)
-        touch.fired = True
-        scene._active_touches[-1] = touch
-
-        scene._on_motion(-1, (300, 100))
-
-        self.assertEqual(touch.reference_pos, (100, 100))
-        scene._handle_touch_event.assert_not_called()
-
-    def test_check_pending_touches_evaluates_every_active_touch(self) -> None:
-        scene = make_scene()
-        scene._phase = "fixation"
-        scene._handle_touch_event = Mock()
-        scene._active_touches[-1] = _ActiveTouch((10, 20), 0.0)
-        scene._active_touches[3] = _ActiveTouch((30, 40), 0.0)
-
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=1.0,
-        ):
-            scene._check_pending_touches()
-
-        self.assertTrue(scene._active_touches[-1].fired)
-        self.assertTrue(scene._active_touches[3].fired)
-        self.assertEqual(scene._handle_touch_event.call_count, 2)
+        scene._evaluate_tracker.assert_called_once_with(-1, (5, 5))
 
 
-class HasActiveStimulusTests(unittest.TestCase):
-    def test_fixation_phase_always_has_an_active_stimulus(self) -> None:
-        scene = make_scene()
-        scene._phase = "fixation"
-
-        self.assertTrue(scene._has_active_stimulus())
-
+class ActiveShapeTests(unittest.TestCase):
     def test_test_phase_depends_on_reaction_window_open(self) -> None:
         scene = make_scene()
         scene._phase = "test"
+        scene._is_target_touch = Mock(return_value=True)
 
         scene._is_reaction_window_open = True
-        self.assertTrue(scene._has_active_stimulus())
+        self.assertTrue(scene._active_shape_test((10, 10)))
 
         scene._is_reaction_window_open = False
-        self.assertFalse(scene._has_active_stimulus())
+        self.assertIsNone(scene._active_shape_test((10, 10)))
 
-    def test_blank_phase_never_has_an_active_stimulus(self) -> None:
+    def test_blank_phase_has_no_active_shape(self) -> None:
         scene = make_scene()
         scene._phase = "blank"
 
-        self.assertFalse(scene._has_active_stimulus())
+        self.assertIsNone(scene._active_shape_test((10, 10)))
 
 
 class FixationTouchTests(unittest.TestCase):
-    """Covers _handle_touch_event's fixation-phase branch: a radius
-    check around the fixation point (unlike visual_touchscreen_training,
-    where any screen position qualifies). The qualifying radius is
+    """Covers the fixation-phase shape test: a radius check around the
+    fixation point. The qualifying radius is
     measured outward from the edge of the visible green circle
     (fixation_point_radius_px), not from its center point - so the
     actual cutoff distance from center is
     fixation_point_radius_px + fixation_touch_reward_radius_px."""
 
-    def test_touch_within_radius_triggers_on_fixation_touched(self) -> None:
+    def test_touch_within_radius_qualifies(self) -> None:
         scene = make_scene()
         scene._phase = "fixation"
-        scene._on_fixation_touched = Mock()
         scene._config = SimpleNamespace(
             fixation_point_radius_px=10.0,
             fixation_touch_reward_radius_px=100.0,
         )
 
         # qualifying radius = 10 + 100 = 110px; 50px away qualifies
-        scene._handle_touch_event((1440 + 50, 540))
+        self.assertTrue(scene._active_shape_test((1440 + 50, 540)))
 
-        scene._on_fixation_touched.assert_called_once_with()
-
-    def test_touch_outside_radius_does_not_trigger(self) -> None:
+    def test_touch_outside_radius_does_not_qualify(self) -> None:
         scene = make_scene()
         scene._phase = "fixation"
-        scene._on_fixation_touched = Mock()
         scene._config = SimpleNamespace(
             fixation_point_radius_px=10.0,
             fixation_touch_reward_radius_px=100.0,
         )
 
         # qualifying radius = 10 + 100 = 110px; 500px away does not
-        scene._handle_touch_event((1440 + 500, 540))
-
-        scene._on_fixation_touched.assert_not_called()
+        self.assertFalse(scene._active_shape_test((1440 + 500, 540)))
 
     def test_touch_within_the_visible_circle_qualifies_at_tolerance_0(self) -> None:
         # With fixation_touch_reward_radius_px=0, the qualifying radius
@@ -829,45 +682,45 @@ class FixationTouchTests(unittest.TestCase):
         # pixel at the center).
         scene = make_scene()
         scene._phase = "fixation"
-        scene._on_fixation_touched = Mock()
         scene._config = SimpleNamespace(
             fixation_point_radius_px=12.0,
             fixation_touch_reward_radius_px=0.0,
         )
 
-        scene._handle_touch_event((1440 + 8, 540))
-
-        scene._on_fixation_touched.assert_called_once_with()
+        self.assertTrue(scene._active_shape_test((1440 + 8, 540)))
 
     def test_touch_exactly_at_fixation_point_center_qualifies_at_tolerance_0(
         self,
     ) -> None:
         scene = make_scene()
         scene._phase = "fixation"
-        scene._on_fixation_touched = Mock()
         scene._config = SimpleNamespace(
             fixation_point_radius_px=12.0,
             fixation_touch_reward_radius_px=0.0,
         )
 
-        scene._handle_touch_event((1440, 540))
-
-        scene._on_fixation_touched.assert_called_once_with()
+        self.assertTrue(scene._active_shape_test((1440, 540)))
 
     def test_touch_beyond_the_visible_circle_does_not_qualify_at_tolerance_0(
         self,
     ) -> None:
         scene = make_scene()
         scene._phase = "fixation"
-        scene._on_fixation_touched = Mock()
         scene._config = SimpleNamespace(
             fixation_point_radius_px=12.0,
             fixation_touch_reward_radius_px=0.0,
         )
 
-        scene._handle_touch_event((1440 + 50, 540))
+        self.assertFalse(scene._active_shape_test((1440 + 50, 540)))
 
-        scene._on_fixation_touched.assert_not_called()
+    def test_fixation_touch_event_triggers_on_fixation_touched(self) -> None:
+        scene = make_scene()
+        scene._phase = "fixation"
+        scene._on_fixation_touched = Mock()
+
+        scene._handle_touch_event((1440, 540))
+
+        scene._on_fixation_touched.assert_called_once_with()
 
     def test_fixation_touched_records_latency_and_gives_reward(self) -> None:
         scene = make_scene()
@@ -1196,23 +1049,20 @@ class ReactionWindowElapsedTests(unittest.TestCase):
             5000, scene._on_response_window_elapsed
         )
 
-    def test_show_visual_stimulus_re_anchors_active_touches(self) -> None:
+    def test_show_visual_stimulus_restarts_the_dwell_of_held_inputs(self) -> None:
         scene = make_scene()
         scene._config = SimpleNamespace(reaction_window_duration_ms=5000)
-        touch = _ActiveTouch((10, 20), 0.0)
-        touch.fired = True
-        touch.last_pos = (99, 99)
-        scene._active_touches[-1] = touch
+        scene._evaluate_tracker = Mock()
+        tracker = DwellTracker(
+            touch_id=-1, inside_since_ms=1.0, fired=True, last_pos=(99, 99)
+        )
+        scene._trackers[-1] = tracker
 
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=3.0,
-        ):
-            scene._show_visual_stimulus()
+        scene._show_visual_stimulus()
 
-        self.assertFalse(touch.fired)
-        self.assertEqual(touch.reference_pos, (99, 99))
-        self.assertEqual(touch.reference_ms, 3000)
+        self.assertFalse(tracker.fired)
+        self.assertIsNone(tracker.inside_since_ms)
+        scene._evaluate_tracker.assert_called_once_with(-1, (99, 99))
 
     def test_response_window_elapsed_marks_timeout_and_proceeds(self) -> None:
         scene = make_scene()
@@ -1236,107 +1086,82 @@ class ReactionWindowElapsedTests(unittest.TestCase):
 
 
 class CrossTrialHandoffTests(unittest.TestCase):
-    """Covers the module-level _pending_touches stash/claim mechanism."""
+    """Covers the module-level _pending_touch_positions stash/claim mechanism."""
 
-    def test_stash_pending_touches_stores_active_touches(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
+    def tearDown(self) -> None:
+        scene_module._pending_touch_positions = None
 
+    def test_stash_pending_touches_stores_last_positions(self) -> None:
         scene = make_scene()
-        scene._active_touches = {-1: _ActiveTouch((10, 20), 0.0)}
+        scene._trackers[-1] = DwellTracker(touch_id=-1, last_pos=(10, 20))
 
-        scene_module._pending_touches = None
         scene._stash_pending_touches()
 
-        self.assertEqual(scene_module._pending_touches, scene._active_touches)
-        scene_module._pending_touches = None
+        self.assertEqual(scene_module._pending_touch_positions, {-1: (10, 20)})
 
     def test_stash_pending_touches_stores_none_when_nothing_active(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
-
         scene = make_scene()
-        scene._active_touches = {}
 
-        scene_module._pending_touches = None
         scene._stash_pending_touches()
 
-        self.assertIsNone(scene_module._pending_touches)
+        self.assertIsNone(scene_module._pending_touch_positions)
 
     def test_clear_pending_touches_always_sets_none(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
-
         scene = make_scene()
-        scene_module._pending_touches = {-1: _ActiveTouch((10, 20), 0.0)}
+        scene_module._pending_touch_positions = {-1: (10, 20)}
 
         scene._clear_pending_touches()
 
-        self.assertIsNone(scene_module._pending_touches)
+        self.assertIsNone(scene_module._pending_touch_positions)
 
     def test_quit_stashes_touches_when_trial_ended_normally(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
-
         scene = make_scene()
         scene._settlement = Mock(return_value=False)
         scene._print_result = Mock()
         scene._data_logger = Mock()
-        scene._timer = Mock()
-        scene._running = True
         scene._result.result = ResultEnum.CORRECT
-        scene._active_touches = {-1: _ActiveTouch((10, 20), 0.0)}
+        scene._trackers[-1] = DwellTracker(touch_id=-1, last_pos=(10, 20))
 
-        scene_module._pending_touches = None
         scene.quit()
 
-        self.assertEqual(scene_module._pending_touches, scene._active_touches)
-        scene_module._pending_touches = None
+        self.assertEqual(scene_module._pending_touch_positions, {-1: (10, 20)})
+        scene._gaze_driver.discard.assert_called_once_with()
 
     def test_quit_clears_touches_when_trial_was_force_quit(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
-
         scene = make_scene()
         scene._settlement = Mock(return_value=False)
         scene._print_result = Mock()
         scene._data_logger = Mock()
-        scene._timer = Mock()
-        scene._running = True
         scene._result.result = ResultEnum.PENDING
-        scene._active_touches = {-1: _ActiveTouch((10, 20), 0.0)}
+        scene._trackers[-1] = DwellTracker(touch_id=-1, last_pos=(10, 20))
+        scene_module._pending_touch_positions = {-1: (99, 99)}
 
-        scene_module._pending_touches = {-1: _ActiveTouch((99, 99), 0.0)}
         scene.quit()
 
-        self.assertIsNone(scene_module._pending_touches)
+        self.assertIsNone(scene_module._pending_touch_positions)
         self.assertEqual(scene._result.result, ResultEnum.CANCELLED)
 
-    def test_claim_pending_touches_returns_empty_dict_when_none_stashed(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
-
+    def test_claim_pending_touches_is_a_no_op_when_none_stashed(self) -> None:
         scene = make_scene()
-        scene_module._pending_touches = None
 
-        claimed = scene._claim_pending_touches()
+        scene._claim_pending_touches()
 
-        self.assertEqual(claimed, {})
+        self.assertEqual(scene._trackers, {})
 
-    def test_claim_pending_touches_resets_fired_and_re_anchors(self) -> None:
-        import stages.visual_3pt_calibration.scene as scene_module
-
+    def test_claim_pending_touches_starts_a_fresh_dwell_at_the_held_position(
+        self,
+    ) -> None:
         scene = make_scene()
-        touch = _ActiveTouch((10, 20), 0.0)
-        touch.fired = True
-        touch.last_pos = (77, 88)
-        scene_module._pending_touches = {-1: touch}
+        scene_module._pending_touch_positions = {-1: (77, 88)}
 
-        with patch(
-            "stages.visual_3pt_calibration.scene.monotonic",
-            return_value=4.0,
-        ):
-            claimed = scene._claim_pending_touches()
+        scene._claim_pending_touches()
 
-        self.assertIn(-1, claimed)
-        self.assertFalse(claimed[-1].fired)
-        self.assertEqual(claimed[-1].reference_pos, (77, 88))
-        self.assertEqual(claimed[-1].reference_ms, 4000)
-        self.assertIsNone(scene_module._pending_touches)
+        tracker = scene._trackers[-1]
+        self.assertFalse(tracker.fired)
+        self.assertIsNone(tracker.inside_since_ms)
+        self.assertEqual(tracker.last_pos, (77, 88))
+        self.assertEqual(scene._trajectories[-1], [])
+        self.assertIsNone(scene_module._pending_touch_positions)
 
 
 class RewardTests(unittest.TestCase):
@@ -1493,7 +1318,7 @@ class QuitFlowTests(unittest.TestCase):
 
 class StructureConsistencyTests(unittest.TestCase):
     def test_scene_name_is_canonical(self) -> None:
-        self.assertEqual(Visual3ptCalibration.name(), "visual_3pt_calibration")
+        self.assertEqual(Visual3ptCalibration.name(), "visual3pt_calibration")
 
     def test_no_audio_dependencies_are_imported(self) -> None:
         module_path = Path("stages/visual_3pt_calibration/scene.py")
