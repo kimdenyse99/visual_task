@@ -11,15 +11,6 @@ from stages.target_position_generalization_training.target_position_generalizati
     TargetPositionGeneralizationTraining,
 )
 from stages.touchscreen_training.touchscreen_training import TouchscreenTraining
-from stages.twitter_category_boundary_mapping.twitter_category_boundary_mapping import (
-    TwitterCategoryBoundaryMapping,
-)
-from stages.visual_category_position_decoupling_training.visual_category_position_decoupling_training import (
-    VisualCategoryPositionDecouplingTraining,
-)
-from stages.visual_two_choice_training.visual_two_choice_training import (
-    VisualTwoChoiceTraining,
-)
 
 
 class FingerEventConversionTests(unittest.TestCase):
@@ -27,9 +18,6 @@ class FingerEventConversionTests(unittest.TestCase):
         stage_classes: tuple[type[Any], ...] = (
             TouchscreenTraining,
             TargetPositionGeneralizationTraining,
-            VisualTwoChoiceTraining,
-            VisualCategoryPositionDecouplingTraining,
-            TwitterCategoryBoundaryMapping,
         )
 
         for stage_class in stage_classes:

@@ -873,9 +873,7 @@ class QuitFlowTests(unittest.TestCase):
 
 
 class StructureConsistencyTests(unittest.TestCase):
-    REFERENCE_PATH = Path(
-        "stages/visual_two_choice_training/visual_two_choice_training.py"
-    )
+    REFERENCE_PATH = Path("stages/touchscreen_training/touchscreen_training.py")
     TARGET_PATH = Path(
         "stages/target_position_generalization_training/target_position_generalization_training.py"
     )
@@ -907,18 +905,10 @@ class StructureConsistencyTests(unittest.TestCase):
         )
 
     def test_top_level_function_order_matches_reference_stage(self) -> None:
-        target_names = self._class_member_names(self.TARGET_PATH)
-        reference_names = self._class_member_names(self.REFERENCE_PATH)
-
-        # _on_incorrect is unreachable in the single-target stage and is
-        # deliberately omitted; every other member must match in order.
-        expected_omitted = ("_on_incorrect",)
-        expected_target_names = [
-            name for name in reference_names if name not in expected_omitted
-        ]
-
-        self.assertEqual(target_names, expected_target_names)
-        self.assertEqual(len(target_names), len(reference_names) - 1)
+        self.assertEqual(
+            self._class_member_names(self.TARGET_PATH),
+            self._class_member_names(self.REFERENCE_PATH),
+        )
 
     def test_scene_name_is_canonical(self) -> None:
         self.assertEqual(
