@@ -757,12 +757,8 @@ class RealStimulusTests(unittest.TestCase):
         valid_positions = {
             (fixation_center[0] - offset_px, fixation_center[1] - offset_px),
             (fixation_center[0] - offset_px, fixation_center[1] + offset_px),
-            (
-                fixation_center[0]
-                + round(config.target_size_px // 2)
-                + round(config.fixation_point_radius_px),
-                fixation_center[1],
-            ),
+            # Third target sits at the fixation point's own position.
+            fixation_center,
         }
         self.assertIn(scene._correct_target.rect.center, valid_positions)
 
@@ -777,12 +773,8 @@ class RealStimulusTests(unittest.TestCase):
         valid_positions = {
             (fixation_center[0] - offset_px, fixation_center[1] - offset_px),
             (fixation_center[0] - offset_px, fixation_center[1] + offset_px),
-            (
-                fixation_center[0]
-                + round(config.target_size_px // 2)
-                + round(config.fixation_point_radius_px),
-                fixation_center[1],
-            ),
+            # Third target sits at the fixation point's own position.
+            fixation_center,
         }
 
         for _ in range(200):

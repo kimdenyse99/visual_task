@@ -16,6 +16,7 @@ from mxbiflow.utils.logger import setup_logging
 
 #Import different modules for actual game
 from stages.visual_3pt_calibration import Visual3ptCalibration
+from stages.visual_3pt_calibration_v2 import Visual3ptCalibrationV2
 from stages.visual_stability_training import VisualStabilityTraining
 from stages.visual_tracing import VisualTracing
 
@@ -34,6 +35,7 @@ def main() -> None:
         [
             VisualStabilityTraining,
             Visual3ptCalibration,
+            Visual3ptCalibrationV2,
             VisualTracing,
         ]
     )
@@ -60,4 +62,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main()
