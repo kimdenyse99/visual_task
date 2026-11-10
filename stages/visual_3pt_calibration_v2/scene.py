@@ -123,6 +123,8 @@ class Visual3ptCalibrationV2(Scene):
     level_table: ClassVar[dict[str, list[int]]] = LEVEL_TABLE
     _trials_context_key: ClassVar[str] = "visual_3pt_calibration_v2.trials"
     _trace_color: ClassVar[tuple[int, int, int]] = (220, 0, 0)
+    _acceptance_area_color: ClassVar[tuple[int, int, int]] = (0, 200, 0)
+    _acceptance_area_width_px: ClassVar[int] = 2
 
     @classmethod
     def name(cls) -> str:
@@ -464,6 +466,8 @@ class Visual3ptCalibrationV2(Scene):
             self._sprites, self._fixation_point, self._target,
             self._target_asset_name,
         )
+        if self._config.show_fixation_acceptance_area and self._phase == "fixation":
+            self._draw_acceptance_area(screen)
         if self._config.show_gaze_trace:
             self._draw_trace(screen)
         self._result_widget.draw(screen)
@@ -720,6 +724,16 @@ class Visual3ptCalibrationV2(Scene):
         )
         if fired_now:
             self._on_fixation_touched()
+
+    def _draw_acceptance_area(self, screen: SurfaceType) -> None:
+        """Outline of the area in which gaze counts as on the fixation point."""
+        draw_circle(
+            screen,
+            self._acceptance_area_color,
+            self._fixation_center,
+            round(self._config.fixation_acceptance_distance_px),
+            self._acceptance_area_width_px,
+        )
 
     def _prune_trace(self) -> None:
         max_age_ms = self._config.gaze_trace_duration_ms

@@ -182,6 +182,10 @@ class Config(BaseModel):
     def gaze_trace_duration_ms(self) -> int:
         return self.stored.gaze_trace_duration_ms
 
+    @property
+    def show_fixation_acceptance_area(self) -> bool:
+        return self.stored.show_fixation_acceptance_area
+
 
 class LevelConfig(BaseModel):
     # Size (width and height) of the GIF that replaces the fixation point.
@@ -243,6 +247,12 @@ class StoredConfig(BaseModel):
     # Live fading trace of recent gaze/mouse positions, for debugging.
     show_gaze_trace: bool = False
     gaze_trace_duration_ms: NonNegativeInt = 500
+
+    # Draw the gaze acceptance area (fixation point radius plus
+    # fixation_acceptance_radius_cm) as a circle outline around the
+    # fixation point while it is on screen. Purely visual; has no effect
+    # on dwell/scoring, and is not reported as a stimulus event.
+    show_fixation_acceptance_area: bool = False
 
     levels: dict[LevelID, LevelConfig]
 

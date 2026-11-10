@@ -9,6 +9,7 @@
     "dwell_grace_ms": 150,
     "show_gaze_trace": false,
     "gaze_trace_duration_ms": 500,
+    "show_fixation_acceptance_area": false,
 
     "fixation_timeout_ms": 5000,
 

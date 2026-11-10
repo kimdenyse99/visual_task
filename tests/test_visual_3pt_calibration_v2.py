@@ -8,7 +8,8 @@ from unittest.mock import Mock, patch
 
 from mxbiflow.models.animal import AnimalBaseInfo
 from pydantic import ValidationError
-from pygame import FINGERDOWN, Event
+from pygame import FINGERDOWN, Event, Surface
+from pygame.sprite import Group
 
 from assets import MARMOSET_IMAGE_PATHS
 from stages.visual_3pt_calibration_v2 import Visual3ptCalibrationV2
@@ -337,6 +338,43 @@ class FixationTests(unittest.TestCase):
             clock.advance_ms(1000)
             scene._check_all_trackers()
         self.assertEqual(scene._result.result, ResultEnum.PENDING)
+
+
+class AcceptanceAreaOutlineTests(unittest.TestCase):
+    def _draw(self, scene: Any) -> list[Any]:
+        scene._result_widget = Mock()
+        scene._control_buttons = Group()
+        screen = Surface((1920, 1080))
+        with patch("stages.visual_3pt_calibration_v2.scene.draw_circle") as circle:
+            scene.draw(screen)
+        return circle.call_args_list
+
+    def test_hidden_by_default(self) -> None:
+        self.assertFalse(make_config().show_fixation_acceptance_area)
+        data = json.loads(CONFIG_PATH.read_text())["default"]
+        self.assertFalse(data["show_fixation_acceptance_area"])
+        scene = make_scene()
+        scene._on_trial_start()
+        self.assertEqual(self._draw(scene), [])
+
+    def test_outline_matches_acceptance_distance(self) -> None:
+        scene = make_scene(show_fixation_acceptance_area=True)
+        scene._on_trial_start()
+        calls = self._draw(scene)
+        self.assertEqual(len(calls), 1)
+        _, color, center, radius, width = calls[0].args
+        self.assertEqual(center, scene._fixation_center)
+        self.assertEqual(
+            radius, round(scene._config.fixation_acceptance_distance_px)
+        )
+        self.assertGreater(width, 0)  # outline, not a filled circle
+        self.assertEqual(color, scene._acceptance_area_color)
+
+    def test_not_drawn_once_fixation_is_over(self) -> None:
+        scene = make_scene(show_fixation_acceptance_area=True)
+        scene._on_trial_start()
+        scene._on_fixation_timeout()
+        self.assertEqual(self._draw(scene), [])
 
 
 class TimeoutTests(unittest.TestCase):
