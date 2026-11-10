@@ -51,16 +51,13 @@ def make_stored_config(**overrides: Any) -> StoredConfig:
         "level_up_threshold": 0.8,
         "level_up_trial_count_threshold": 20,
         "fixation_point_radius_cm": 0.5,
-        "fixation_acceptance_radius_cm": 1.5,
+        "fixation_acceptance_radius_cm": 1.0,
         "position_distance_cm": 5.0,
         "pixels_per_cm": 46.0,
         "min_touch_duration_ms": 200,
         "dwell_grace_enabled": True,
         "dwell_grace_ms": 150,
-        "levels": {
-            1: LevelConfig(target_size_cm=1.5),
-            2: LevelConfig(target_size_cm=1.5),
-        },
+        "levels": {1: LevelConfig(target_size_cm=1.5)},
     }
     defaults.update(overrides)
     return StoredConfig(**defaults)
@@ -168,24 +165,37 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(stored.post_reward_stimulus_duration_ms, 1500)
         self.assertEqual(stored.inter_trial_duration_ms, 1500)
         self.assertEqual(stored.fixation_timeout_ms, 5000)
-        self.assertGreaterEqual(
-            stored.fixation_acceptance_radius_cm, stored.fixation_point_radius_cm
-        )
+        self.assertEqual(stored.fixation_acceptance_radius_cm, 1.0)
+
+    def test_default_config_has_a_single_level(self) -> None:
+        data = json.loads(CONFIG_PATH.read_text())
+        stored = StoredConfigs.model_validate(data).root["default"]
+        self.assertEqual(list(stored.levels), [1])
 
     def test_config_has_no_fixation_delay_range(self) -> None:
         data = json.loads(CONFIG_PATH.read_text())["default"]
         self.assertNotIn("fixation_duration_min_ms", data)
         self.assertNotIn("fixation_duration_max_ms", data)
 
-    def test_acceptance_radius_smaller_than_point_is_rejected(self) -> None:
+    def test_negative_acceptance_radius_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
-            make_stored_config(
-                fixation_point_radius_cm=1.0, fixation_acceptance_radius_cm=0.5
-            )
+            make_stored_config(fixation_acceptance_radius_cm=-0.1)
 
-    def test_acceptance_radius_converts_cm_to_pixels(self) -> None:
-        config = make_config(fixation_acceptance_radius_cm=2.0, pixels_per_cm=40.0)
+    def test_acceptance_radius_is_measured_from_the_perimeter(self) -> None:
+        config = make_config(
+            fixation_point_radius_cm=0.5,
+            fixation_acceptance_radius_cm=2.0,
+            pixels_per_cm=40.0,
+        )
         self.assertAlmostEqual(config.fixation_acceptance_radius_px, 80.0)
+        # 0.5 cm point radius + 2.0 cm beyond its edge = 2.5 cm from center.
+        self.assertAlmostEqual(config.fixation_acceptance_distance_px, 100.0)
+
+    def test_zero_acceptance_radius_accepts_only_the_point(self) -> None:
+        config = make_config(fixation_acceptance_radius_cm=0)
+        self.assertAlmostEqual(
+            config.fixation_acceptance_distance_px, config.fixation_point_radius_px
+        )
 
     def test_dwell_grace_is_zero_when_disabled(self) -> None:
         config = make_config(dwell_grace_enabled=False, dwell_grace_ms=150)
@@ -272,7 +282,7 @@ class FixationTests(unittest.TestCase):
 
     def test_gaze_in_vicinity_counts(self) -> None:
         scene = make_scene()
-        inside_px = int(scene._config.fixation_acceptance_radius_px) - 1
+        inside_px = int(scene._config.fixation_acceptance_distance_px) - 1
         with Clock() as clock:
             scene._on_trial_start()
             scene._on_press(-1, self._on_point(scene, dx=inside_px))
@@ -282,7 +292,7 @@ class FixationTests(unittest.TestCase):
 
     def test_gaze_outside_radius_does_not_count(self) -> None:
         scene = make_scene()
-        outside_px = int(scene._config.fixation_acceptance_radius_px) + 2
+        outside_px = int(scene._config.fixation_acceptance_distance_px) + 2
         with Clock() as clock:
             scene._on_trial_start()
             scene._on_press(-1, self._on_point(scene, dx=outside_px))
@@ -293,7 +303,7 @@ class FixationTests(unittest.TestCase):
 
     def test_brief_exit_within_grace_keeps_dwell(self) -> None:
         scene = make_scene()
-        outside_px = int(scene._config.fixation_acceptance_radius_px) + 2
+        outside_px = int(scene._config.fixation_acceptance_distance_px) + 2
         with Clock() as clock:
             scene._on_trial_start()
             scene._on_press(-1, self._on_point(scene))
@@ -307,7 +317,7 @@ class FixationTests(unittest.TestCase):
 
     def test_exit_longer_than_grace_resets_dwell(self) -> None:
         scene = make_scene()
-        outside_px = int(scene._config.fixation_acceptance_radius_px) + 2
+        outside_px = int(scene._config.fixation_acceptance_distance_px) + 2
         with Clock() as clock:
             scene._on_trial_start()
             scene._on_press(-1, self._on_point(scene))
@@ -388,6 +398,10 @@ class RewardPhaseTests(unittest.TestCase):
         self.assertEqual(scene._result.trial_manual_reward_count, 1)
 
 
+# Level-up logic needs a second level to move to; the shipped config has one.
+TWO_LEVELS = {1: LevelConfig(target_size_cm=1.5), 2: LevelConfig(target_size_cm=1.5)}
+
+
 class SettlementTests(unittest.TestCase):
     def _settle(
         self, scene: Any, previous: list[ResultEnum]
@@ -399,14 +413,20 @@ class SettlementTests(unittest.TestCase):
         scene._save_trials = Mock()
         return scene._settlement()
 
-    def test_timeouts_count_against_correct_rate(self) -> None:
+    def test_single_level_never_levels_up(self) -> None:
         scene = make_scene(level_up_trial_count_threshold=3)
+        scene._result.result = ResultEnum.CORRECT
+        self.assertFalse(self._settle(scene, [ResultEnum.CORRECT] * 3))
+        scene._mxbiflow.session.level_up.assert_not_called()
+
+    def test_timeouts_count_against_correct_rate(self) -> None:
+        scene = make_scene(level_up_trial_count_threshold=3, levels=TWO_LEVELS)
         scene._result.result = ResultEnum.CORRECT
         is_level_up = self._settle(scene, [ResultEnum.TIMEOUT] * 3)
         self.assertFalse(is_level_up)
 
     def test_levels_up_when_rate_and_count_are_met(self) -> None:
-        scene = make_scene(level_up_trial_count_threshold=3)
+        scene = make_scene(level_up_trial_count_threshold=3, levels=TWO_LEVELS)
         scene._result.result = ResultEnum.CORRECT
         is_level_up = self._settle(scene, [ResultEnum.CORRECT] * 3)
         self.assertTrue(is_level_up)

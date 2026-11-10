@@ -3,8 +3,9 @@
 Trial flow (one scene instance per trial, like every other stage here):
 
 1. fixation  - a fixation point appears at one of three positions, chosen
-               at random. Gaze that dwells inside fixation_acceptance_radius
-               (measured from the point's center) for min_touch_duration_ms,
+               at random. Gaze that dwells on the point or within
+               fixation_acceptance_radius_cm of its perimeter for
+               min_touch_duration_ms,
                with the usual dwell_grace_ms tolerance, counts as fixation.
                If that doesn't happen within fixation_timeout_ms the trial
                is a TIMEOUT and skips straight to step 3.
@@ -691,7 +692,7 @@ class Visual3ptCalibrationV2(Scene):
 
     def _is_on_fixation_point(self, pos: tuple[int, int]) -> bool:
         distance = math.dist(pos, self._fixation_center)
-        return distance <= self._config.fixation_acceptance_radius_px
+        return distance <= self._config.fixation_acceptance_distance_px
 
     def _active_shape_test(self, pos: tuple[int, int]) -> bool | None:
         """Whether pos is inside the fixation acceptance radius, or None

@@ -14,7 +14,7 @@
 
     "fixation_point_radius_cm": 0.50,
     "fixation_point_inner_radius_ratio": 0.4,
-    "fixation_acceptance_radius_cm": 1.5,
+    "fixation_acceptance_radius_cm": 1.0,
 
     "position_distance_cm": 5,
 
@@ -28,15 +28,6 @@
 
     "levels": {
       "1": {
-        "target_size_cm": 1.5
-      },
-      "2": {
-        "target_size_cm": 1.5
-      },
-      "3": {
-        "target_size_cm": 1.5
-      },
-      "4": {
         "target_size_cm": 1.5
       }
     }

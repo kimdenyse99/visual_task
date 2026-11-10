@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from mxbiflow.models.animal import AnimalBaseInfo
 from pydantic import (
@@ -148,6 +148,13 @@ class Config(BaseModel):
         return self.fixation_acceptance_radius_cm * self.stored.pixels_per_cm
 
     @property
+    def fixation_acceptance_distance_px(self) -> float:
+        """Max distance (px) from the fixation point's center at which gaze
+        still counts: the point's own radius plus the acceptance radius
+        measured outward from its perimeter."""
+        return self.fixation_point_radius_px + self.fixation_acceptance_radius_px
+
+    @property
     def position_distance_cm(self) -> float:
         return self.stored.position_distance_cm
 
@@ -209,11 +216,10 @@ class StoredConfig(BaseModel):
     fixation_point_radius_cm: float = Field(default=0.5, gt=0)
     fixation_point_inner_radius_ratio: float = Field(default=0.40, gt=0, lt=1)
 
-    # Radius (cm), measured from the fixation point's center, inside which
-    # gaze counts as "on" the fixation point. Must be at least the drawn
-    # fixation point's own radius, so gaze on the point itself always
-    # qualifies; anything larger also accepts gaze in its vicinity.
-    fixation_acceptance_radius_cm: float = Field(default=1.5, gt=0)
+    # Extra radius (cm) around the fixation point, measured outward from
+    # its perimeter, inside which gaze still counts as "on" the point.
+    # Gaze on the point itself always counts; 0 accepts only the point.
+    fixation_acceptance_radius_cm: float = Field(default=1.0, ge=0)
 
     # Spacing (cm) of the three candidate fixation positions - the same
     # geometry visual_3pt_calibration uses for its target positions (see
@@ -239,17 +245,6 @@ class StoredConfig(BaseModel):
     gaze_trace_duration_ms: NonNegativeInt = 500
 
     levels: dict[LevelID, LevelConfig]
-
-    @field_validator("fixation_acceptance_radius_cm")
-    @classmethod
-    def validate_acceptance_radius(cls, value: float, info: Any) -> float:
-        point_radius = info.data.get("fixation_point_radius_cm")
-        if point_radius is not None and value < point_radius:
-            raise ValueError(
-                "fixation_acceptance_radius_cm must be greater than or equal "
-                "to fixation_point_radius_cm"
-            )
-        return value
 
     @field_validator("levels")
     @classmethod
