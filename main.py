@@ -15,13 +15,8 @@ from mxbiflow.ui import run_session_post_processing, run_session_summary, run_wi
 from mxbiflow.utils.logger import setup_logging
 
 #Import different modules for actual game
-from stages.target_position_generalization_training import (
-    TargetPositionGeneralizationTraining,
-)
-from stages.touchscreen_training import TouchscreenTraining
 from stages.visual_3pt_calibration import Visual3ptCalibration
 from stages.visual_stability_training import VisualStabilityTraining
-from stages.size_reduction_3pt import SizeReduction3Pt
 from stages.visual_tracing import VisualTracing
 
 #Game code
@@ -36,13 +31,10 @@ def main() -> None:
 
     scene_manager = SceneManager()
     scene_manager.register(
-        [  
-            SizeReduction3Pt,
+        [
             VisualStabilityTraining,
             Visual3ptCalibration,
             VisualTracing,
-            TouchscreenTraining,
-            TargetPositionGeneralizationTraining,
         ]
     )
 

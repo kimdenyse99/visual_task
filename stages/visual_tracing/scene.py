@@ -16,8 +16,6 @@ from mxbiflow.infra import DataLogger
 from mxbiflow.scene import Scene
 from pygame import (
     FINGERDOWN,
-    FINGERMOTION,
-    FINGERUP,
     MOUSEBUTTONDOWN,
     MOUSEBUTTONUP,
     MOUSEMOTION,
@@ -34,8 +32,10 @@ from pygame.sprite import Group, Sprite
 from rich.pretty import pprint
 
 from dwell import DwellTracker
-from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
+from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver, GazeSample
 from models import TouchEvent
+from stimulus_events import StimulusEvents
+from trial_events import write_target_shown_event
 
 from .models import (
     LEVEL_TABLE,
@@ -143,6 +143,7 @@ class VisualTracing(Scene):
         self._reaction_window_started_at_ms: float | None = None
 
         self._mxbiflow = get_mxbiflow()
+        self._stimulus_events = StimulusEvents(self._mxbiflow)
         self._rewarder = self._mxbiflow.mxbi.rewarder
         self._timer = self._mxbiflow.timer
 
@@ -174,8 +175,18 @@ class VisualTracing(Scene):
         # in parallel with, not instead of, ordinary mouse/finger events
         # handled in handle_event(). Useful for development/testing without
         # eye-tracking hardware: either input source can complete a trial.
+        def _get_gaze_sample() -> "GazeSample | None":
+            # EyeSample (mxbiflow.core.context.MXBIFlow.eye_sample's real
+            # return type) structurally satisfies GazeSample's Protocol
+            # (it has x: float and y: float) and this works correctly at
+            # runtime; the explicit return-type annotation here is only
+            # to satisfy static type checkers, which check a Callable
+            # parameter's return type more strictly than a plain
+            # structural/Protocol match on an ordinary value.
+            return self._mxbiflow.eye_sample
+
         self._gaze_driver = GazeDwellDriver(
-            lambda: self._mxbiflow.eye_sample,
+            _get_gaze_sample,
             self,
             already_down=GAZE_TOUCH_ID in self._trackers,
         )
@@ -242,7 +253,32 @@ class VisualTracing(Scene):
         # it empty means the trace simply shows nothing until the first
         # genuinely fresh _on_motion call populates it, rather than
         # briefly flashing the old position.
+        #
+        # Mouse/finger touches carry over safely: pygame guarantees no
+        # new FINGERDOWN/MOUSEBUTTONDOWN event is re-delivered for an
+        # input that's still physically held down, so "stashed at the
+        # end of the last trial" reliably means "still down now" for
+        # those touch ids.
+        #
+        # Gaze has no such guarantee - it's polled every frame rather
+        # than event-driven, and can silently disappear (tracking lost,
+        # animal looks away) in the gap between one trial ending and the
+        # next beginning. Blindly reinstating a GAZE_TOUCH_ID tracker
+        # from a stashed position would let dwell accumulate against a
+        # gaze signal that's actually gone: _check_all_trackers() re-
+        # evaluates every tracker's last_pos every frame regardless of
+        # whether GazeDwellDriver ever calls _on_motion again, and
+        # GazeDwellDriver itself would tolerate the loss silently for up
+        # to lost_grace_ms (several seconds) before ever abandoning it -
+        # far longer than min_touch_duration_ms typically takes to fire
+        # fixation. So only reinstate GAZE_TOUCH_ID here if a fresh gaze
+        # sample is available right now; otherwise drop it and let
+        # GazeDwellDriver start fresh (already_down=False), requiring a
+        # new press once gaze actually returns.
+        current_gaze_sample = self._mxbiflow.eye_sample
         for touch_id, pos in positions.items():
+            if touch_id == GAZE_TOUCH_ID and current_gaze_sample is None:
+                continue
             tracker = DwellTracker(touch_id=touch_id)
             tracker.last_pos = pos
             self._trackers[touch_id] = tracker
@@ -411,6 +447,7 @@ class VisualTracing(Scene):
         self._on_trial_start()
 
     def quit(self) -> None:
+        self._stimulus_events.clear()
         # Capture this before _cancel_unfinished_trial() can overwrite it:
         # a trial that reached its own natural conclusion (correct,
         # incorrect, or timeout) will already have a resolved result by
@@ -498,6 +535,9 @@ class VisualTracing(Scene):
         screen.blit(self._background, (0, 0))
 
         self._sprites.draw(screen)
+        self._stimulus_events.present(
+            self._sprites, self._fixation_sprite, self._target_sprite,
+        )
         self._draw_trace(screen)
         self._result_widget.draw(screen)
         for button in self._control_buttons:
@@ -786,6 +826,24 @@ class VisualTracing(Scene):
             color=(0, 0, 0),
         )
         self._sprites.add(self._target_sprite)
+
+        # Written at the exact moment the target becomes visible - not
+        # gated on any gaze judgment at all, unlike a "gaze correct"
+        # event. The target's position here is randomized per trial
+        # (_random_target_center), so unlike visual_stability_training's
+        # single fixed center point, each trial's pair should be treated
+        # as its own independent known point when later used for
+        # calibration, not assumed to be the same location across
+        # trials. See trial_events.py's module docstring for the full
+        # reasoning on why "target shown" is the right pre-calibration
+        # event.
+        write_target_shown_event(
+            self._mxbiflow,
+            self._animal,
+            self.name(),
+            self._animal.trial_id,
+            center,
+        )
 
         self._reaction_window_started_at_ms = monotonic() * 1000
         self._is_reaction_window_open = True

@@ -6,36 +6,27 @@ from pathlib import Path
 from typing import Any
 
 import models
-from stages.target_position_generalization_training import models as position_models
-from stages.touchscreen_training import models as size_models
-from stages.visual_category_position_decoupling_training import (
-    models as single_target_position_models,
-)
-from stages.visual_two_choice_training import models as visual_cue_models
+from stages.visual_3pt_calibration import models as visual_3pt_calibration_models
+from stages.visual_stability_training import models as visual_stability_training_models
+from stages.visual_tracing import models as visual_tracing_models
 
 
 class SharedModelTests(unittest.TestCase):
     def test_screen_is_shared(self) -> None:
-        self.assertIs(models.Screen, size_models.Screen)
-        self.assertIs(models.Screen, position_models.Screen)
-        self.assertIs(models.Screen, visual_cue_models.Screen)
-        self.assertIs(models.Screen, single_target_position_models.Screen)
+        self.assertIs(models.Screen, visual_3pt_calibration_models.Screen)
+        self.assertIs(models.Screen, visual_stability_training_models.Screen)
+        self.assertIs(models.Screen, visual_tracing_models.Screen)
 
     def test_result_enum_is_shared(self) -> None:
-        self.assertIs(models.ResultEnum, size_models.ResultEnum)
-        self.assertIs(models.ResultEnum, position_models.ResultEnum)
-        self.assertIs(models.ResultEnum, visual_cue_models.ResultEnum)
-        self.assertIs(models.ResultEnum, single_target_position_models.ResultEnum)
+        self.assertIs(models.ResultEnum, visual_3pt_calibration_models.ResultEnum)
+        self.assertIs(models.ResultEnum, visual_stability_training_models.ResultEnum)
+        self.assertIs(models.ResultEnum, visual_tracing_models.ResultEnum)
 
     def test_each_stage_config_file_parses_with_its_stored_configs(self) -> None:
         for stage_models, stage in (
-            (size_models, "touchscreen_training"),
-            (position_models, "target_position_generalization_training"),
-            (visual_cue_models, "visual_two_choice_training"),
-            (
-                single_target_position_models,
-                "visual_category_position_decoupling_training",
-            ),
+            (visual_3pt_calibration_models, "visual_3pt_calibration"),
+            (visual_stability_training_models, "visual_stability_training"),
+            (visual_tracing_models, "visual_tracing"),
         ):
             with self.subTest(stage=stage):
                 config_path = Path("stages") / stage / "config.json"
@@ -47,62 +38,43 @@ class SharedModelTests(unittest.TestCase):
                     list(stored.levels),
                     list(range(1, len(stored.levels) + 1)),
                 )
-                self.assertEqual(stored.visual_delay_ms, 500)
 
-    def test_trial_results_round_trip_per_stage(self) -> None:
-        for stage_models, stimulus in (
-            (size_models, {"wav_filename": "natural-twitter-1.wav"}),
-            (
-                position_models,
-                {
-                    "pure_tone_frequency_hz": 2000,
-                    "pure_tone_duration_ms": 1000,
+    def test_visual_tracing_trial_results_round_trip(self) -> None:
+        # visual_tracing's Result shape is used here as a representative
+        # example; each stage's Result shape now genuinely differs (e.g.
+        # visual_3pt_calibration no longer has response_latency_ms at
+        # all), so a single shared round-trip shape across every stage,
+        # like the old auditory-stimulus project's stimulus/target_side
+        # fields, would no longer be accurate.
+        raw: dict[str, Any] = {
+            "1": {
+                "version": "1.0.0",
+                "animal": {
+                    "animal": "test-animal",
+                    "trial_id": 1,
+                    "level": 1,
+                    "level_trial_id": 1,
+                    "animal_session_id": 1,
+                    "animal_session_trial_id": 1,
                 },
-            ),
-            (
-                visual_cue_models,
-                {
-                    "pure_tone_frequency_hz": 2000,
-                    "pure_tone_duration_ms": 1000,
-                },
-            ),
-            (
-                single_target_position_models,
-                {
-                    "pure_tone_frequency_hz": 2000,
-                    "pure_tone_duration_ms": 1000,
-                },
-            ),
-        ):
-            with self.subTest(stage=stage_models.__name__):
-                raw: dict[str, Any] = {
-                    "1": {
-                        "version": "1.0.0",
-                        "animal": {
-                            "animal": "test-animal",
-                            "trial_id": 1,
-                            "level": 1,
-                            "level_trial_id": 1,
-                            "animal_session_id": 1,
-                            "animal_session_trial_id": 1,
-                        },
-                        "is_twitter_trial": True,
-                        "stimulus": stimulus,
-                        "result": "correct",
-                        "trial_start_time": 1.0,
-                        "trial_end_time": 2.0,
-                    }
-                }
-                if stage_models in (position_models, single_target_position_models):
-                    raw["1"]["target_side"] = "left"
+                "result": "correct",
+                "trial_start_time": 1.0,
+                "trial_end_time": 2.0,
+                "target_x": 100,
+                "target_y": 200,
+                "target_diameter_px": 28,
+            }
+        }
 
-                trials = stage_models.TrialResults.model_validate_json(json.dumps(raw))
-                restored = stage_models.TrialResults.model_validate_json(
-                    trials.model_dump_json()
-                )
+        trials = visual_tracing_models.TrialResults.model_validate_json(
+            json.dumps(raw)
+        )
+        restored = visual_tracing_models.TrialResults.model_validate_json(
+            trials.model_dump_json()
+        )
 
-                self.assertEqual(restored, trials)
-                self.assertEqual(list(restored.root), [1])
+        self.assertEqual(restored, trials)
+        self.assertEqual(list(restored.root), [1])
 
 
 if __name__ == "__main__":
