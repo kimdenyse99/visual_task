@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 
 import main
 from stages.visual_3pt_calibration import Visual3ptCalibration
+from stages.visual_3pt_calibration_v2 import Visual3ptCalibrationV2
 from stages.visual_stability_training import VisualStabilityTraining
 from stages.visual_tracing import VisualTracing
 
@@ -17,12 +18,14 @@ class StartupFlowTests(unittest.TestCase):
                 for scene in (
                     VisualStabilityTraining,
                     Visual3ptCalibration,
+                    Visual3ptCalibrationV2,
                     VisualTracing,
                 )
             },
             {
                 "visual_stability_training",
                 "visual3pt_calibration",
+                "visual_3pt_calibration_v2",
                 "visual_tracing",
             },
         )
@@ -44,6 +47,7 @@ class StartupFlowTests(unittest.TestCase):
             [
                 VisualStabilityTraining,
                 Visual3ptCalibration,
+                Visual3ptCalibrationV2,
                 VisualTracing,
             ]
         )

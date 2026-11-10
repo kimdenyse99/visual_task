@@ -13,6 +13,7 @@ Registered in `main.py` and run in this order by `mxbiflow`'s scene manager:
 | --- | --- | --- |
 | `visual_stability_training` | `VisualStabilityTraining` | Fixation point, then a single target (static image or animated marmoset GIF) at a fixed, known position. Rewards stable, engaged posture. |
 | `visual_3pt_calibration` | `Visual3ptCalibration` | Fixation → randomized blank gap → target at one of three positions. Used to collect calibration data. |
+| `visual_3pt_calibration_v2` | `Visual3ptCalibrationV2` | Fixation point at one of three positions; gaze dwelling within a configurable radius of it gives an immediate reward while a random marmoset GIF plays in its place. No gaze within `fixation_timeout_ms` (default 5 s) is a timeout. |
 | `visual_tracing` | `VisualTracing` | Fixation → a circular target placed at a random position in the right half of the screen. |
 
 Each stage has its own `config.json` (per-animal levels, timings, sizes,
