@@ -4,7 +4,8 @@ Trial flow (one scene instance per trial, like every other stage here):
 
 1. fixation  - a fixation point appears at one of three positions, chosen
                at random. Gaze that dwells on the point or within
-               fixation_acceptance_radius_cm of its perimeter for
+               the current level's fixation_acceptance_radius_cm of its
+               perimeter for
                min_touch_duration_ms,
                with the usual dwell_grace_ms tolerance, counts as fixation.
                If that doesn't happen within fixation_timeout_ms the trial

@@ -141,7 +141,7 @@ class Config(BaseModel):
 
     @property
     def fixation_acceptance_radius_cm(self) -> float:
-        return self.stored.fixation_acceptance_radius_cm
+        return self.stored.levels[self.level].fixation_acceptance_radius_cm
 
     @property
     def fixation_acceptance_radius_px(self) -> float:
@@ -191,6 +191,11 @@ class LevelConfig(BaseModel):
     # Size (width and height) of the GIF that replaces the fixation point.
     target_size_cm: float = Field(gt=0)
 
+    # Extra radius (cm) around the fixation point, measured outward from
+    # its perimeter, inside which gaze still counts as "on" the point.
+    # Gaze on the point itself always counts; 0 accepts only the point.
+    fixation_acceptance_radius_cm: float = Field(default=1.0, ge=0)
+
 
 class StoredConfig(BaseModel):
     # Blank screen between the end of one trial (GIF removed, or fixation
@@ -219,11 +224,6 @@ class StoredConfig(BaseModel):
     background_color: RGBColor = (127, 127, 127)
     fixation_point_radius_cm: float = Field(default=0.5, gt=0)
     fixation_point_inner_radius_ratio: float = Field(default=0.40, gt=0, lt=1)
-
-    # Extra radius (cm) around the fixation point, measured outward from
-    # its perimeter, inside which gaze still counts as "on" the point.
-    # Gaze on the point itself always counts; 0 accepts only the point.
-    fixation_acceptance_radius_cm: float = Field(default=1.0, ge=0)
 
     # Spacing (cm) of the three candidate fixation positions - the same
     # geometry visual_3pt_calibration uses for its target positions (see
