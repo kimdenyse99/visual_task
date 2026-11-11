@@ -43,6 +43,9 @@ def tearDownModule() -> None:
 
 
 def make_stored_config(**overrides: Any) -> StoredConfig:
+    """fixation_acceptance_radius_cm is a per-level setting; passing it here
+    sets it on the single default level (unless levels is also given)."""
+    radius_cm = overrides.pop("fixation_acceptance_radius_cm", 1.0)
     defaults: dict[str, Any] = {
         "inter_trial_duration_ms": 1500,
         "reward_duration_ms": 600,
@@ -52,13 +55,16 @@ def make_stored_config(**overrides: Any) -> StoredConfig:
         "level_up_threshold": 0.8,
         "level_up_trial_count_threshold": 20,
         "fixation_point_radius_cm": 0.5,
-        "fixation_acceptance_radius_cm": 1.0,
         "position_distance_cm": 5.0,
         "pixels_per_cm": 46.0,
         "min_touch_duration_ms": 200,
         "dwell_grace_enabled": True,
         "dwell_grace_ms": 150,
-        "levels": {1: LevelConfig(target_size_cm=1.5)},
+        "levels": {
+            1: LevelConfig(
+                target_size_cm=1.5, fixation_acceptance_radius_cm=radius_cm
+            )
+        },
     }
     defaults.update(overrides)
     return StoredConfig(**defaults)
@@ -166,12 +172,17 @@ class ConfigFileTests(unittest.TestCase):
         self.assertEqual(stored.post_reward_stimulus_duration_ms, 1500)
         self.assertEqual(stored.inter_trial_duration_ms, 1500)
         self.assertEqual(stored.fixation_timeout_ms, 5000)
-        self.assertEqual(stored.fixation_acceptance_radius_cm, 1.0)
 
-    def test_default_config_has_a_single_level(self) -> None:
-        data = json.loads(CONFIG_PATH.read_text())
-        stored = StoredConfigs.model_validate(data).root["default"]
-        self.assertEqual(list(stored.levels), [1])
+    def test_default_config_has_four_levels_with_per_level_radius(self) -> None:
+        data = json.loads(CONFIG_PATH.read_text())["default"]
+        self.assertNotIn("fixation_acceptance_radius_cm", data)
+        self.assertEqual(list(data["levels"]), ["1", "2", "3", "4"])
+        for level in data["levels"].values():
+            self.assertIn("target_size_cm", level)
+            self.assertIn("fixation_acceptance_radius_cm", level)
+        stored = StoredConfigs.model_validate({"default": data}).root["default"]
+        self.assertEqual(stored.level_up_threshold, 0.8)
+        self.assertEqual(stored.level_up_trial_count_threshold, 200)
 
     def test_config_has_no_fixation_delay_range(self) -> None:
         data = json.loads(CONFIG_PATH.read_text())["default"]
@@ -180,7 +191,32 @@ class ConfigFileTests(unittest.TestCase):
 
     def test_negative_acceptance_radius_is_rejected(self) -> None:
         with self.assertRaises(ValidationError):
-            make_stored_config(fixation_acceptance_radius_cm=-0.1)
+            LevelConfig(target_size_cm=1.5, fixation_acceptance_radius_cm=-0.1)
+
+    def test_acceptance_radius_and_target_size_follow_the_level(self) -> None:
+        levels = {
+            1: LevelConfig(target_size_cm=2.0, fixation_acceptance_radius_cm=1.5),
+            2: LevelConfig(target_size_cm=1.0, fixation_acceptance_radius_cm=0.5),
+        }
+        for level, size_cm, radius_cm in ((1, 2.0, 1.5), (2, 1.0, 0.5)):
+            config = make_config(level=level, levels=levels, pixels_per_cm=40.0)
+            self.assertEqual(config.target_size_cm, size_cm)
+            self.assertEqual(config.fixation_acceptance_radius_cm, radius_cm)
+            self.assertAlmostEqual(
+                config.fixation_acceptance_distance_px, (0.5 + radius_cm) * 40.0
+            )
+
+    def test_scene_uses_the_current_level_radius(self) -> None:
+        levels = {
+            1: LevelConfig(target_size_cm=1.5, fixation_acceptance_radius_cm=2.0),
+            2: LevelConfig(target_size_cm=1.5, fixation_acceptance_radius_cm=0.0),
+        }
+        near_px = round(1.5 * 46.0)  # 1 cm beyond the 0.5 cm point's edge
+        for level, expected in ((1, True), (2, False)):
+            scene = make_scene()
+            scene._config = make_config(level=level, levels=levels)
+            x, y = scene._fixation_center
+            self.assertEqual(scene._is_on_fixation_point((x + near_px, y)), expected)
 
     def test_acceptance_radius_is_measured_from_the_perimeter(self) -> None:
         config = make_config(
@@ -451,7 +487,7 @@ class SettlementTests(unittest.TestCase):
         scene._save_trials = Mock()
         return scene._settlement()
 
-    def test_single_level_never_levels_up(self) -> None:
+    def test_last_level_never_levels_up(self) -> None:
         scene = make_scene(level_up_trial_count_threshold=3)
         scene._result.result = ResultEnum.CORRECT
         self.assertFalse(self._settle(scene, [ResultEnum.CORRECT] * 3))
