@@ -29,15 +29,15 @@
     "levels": {
       "1": {
         "target_size_cm": 1.5,
-        "fixation_acceptance_radius_cm": 1.0
+        "fixation_acceptance_radius_cm": 2.5
       },
       "2": {
         "target_size_cm": 1.5,
-        "fixation_acceptance_radius_cm": 1.0
+        "fixation_acceptance_radius_cm": 2.0
       },
       "3": {
         "target_size_cm": 1.5,
-        "fixation_acceptance_radius_cm": 1.0
+        "fixation_acceptance_radius_cm": 1.5
       },
       "4": {
         "target_size_cm": 1.5,
