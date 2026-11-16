@@ -155,12 +155,20 @@ class Config(BaseModel):
         return self.fixation_point_radius_px + self.fixation_acceptance_radius_px
 
     @property
-    def position_distance_cm(self) -> float:
-        return self.stored.position_distance_cm
+    def position_distance_x_cm(self) -> float:
+        return self.stored.position_distance_x_cm
 
     @property
-    def position_distance_px(self) -> float:
-        return self.stored.position_distance_cm * self.stored.pixels_per_cm
+    def position_distance_x_px(self) -> float:
+        return self.stored.position_distance_x_cm * self.stored.pixels_per_cm
+
+    @property
+    def position_distance_y_cm(self) -> float:
+        return self.stored.position_distance_y_cm
+
+    @property
+    def position_distance_y_px(self) -> float:
+        return self.stored.position_distance_y_cm * self.stored.pixels_per_cm
 
     @property
     def min_touch_duration_ms(self) -> int:
@@ -225,10 +233,15 @@ class StoredConfig(BaseModel):
     fixation_point_radius_cm: float = Field(default=0.5, gt=0)
     fixation_point_inner_radius_ratio: float = Field(default=0.40, gt=0, lt=1)
 
-    # Spacing (cm) of the three candidate fixation positions - the same
-    # geometry visual_3pt_calibration uses for its target positions (see
-    # Visual3ptCalibrationV2._fixation_positions).
-    position_distance_cm: float = Field(default=5.0, gt=0)
+    # Offsets (cm) of the left and right fixation positions from the center
+    # position, along pygame's x and y axes (see
+    # Visual3ptCalibrationV2._fixation_positions). The screen is mounted
+    # rotated 90 degrees counter-clockwise, so on the physical screen x is
+    # the vertical axis (a larger x distance puts left/right lower) and y
+    # is the horizontal axis (a larger y distance spreads left and right
+    # further apart).
+    position_distance_x_cm: float = Field(default=1.5, ge=0)
+    position_distance_y_cm: float = Field(default=4.5, ge=0)
 
     # Pixels-per-centimeter conversion factor for this display (see
     # visual_3pt_calibration's config for how to measure it).

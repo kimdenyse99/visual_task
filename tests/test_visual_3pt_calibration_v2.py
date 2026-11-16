@@ -55,7 +55,8 @@ def make_stored_config(**overrides: Any) -> StoredConfig:
         "level_up_threshold": 0.8,
         "level_up_trial_count_threshold": 20,
         "fixation_point_radius_cm": 0.5,
-        "position_distance_cm": 5.0,
+        "position_distance_x_cm": 1.5,
+        "position_distance_y_cm": 4.5,
         "pixels_per_cm": 46.0,
         "min_touch_duration_ms": 200,
         "dwell_grace_enabled": True,
@@ -240,19 +241,47 @@ class ConfigFileTests(unittest.TestCase):
 
 
 class PositionTests(unittest.TestCase):
-    def test_three_positions_match_v1_geometry(self) -> None:
-        config = make_config()
+    def test_left_and_right_use_separate_x_and_y_distances(self) -> None:
+        config = make_config(
+            position_distance_x_cm=1.0, position_distance_y_cm=3.0, pixels_per_cm=40.0
+        )
         positions = Visual3ptCalibrationV2._fixation_positions(config)
         anchor = (1920 * 3 // 4, 1080 // 2)
-        offset = round(config.position_distance_px // 2)
         self.assertEqual(
             positions,
             {
-                "left": (anchor[0] - offset, anchor[1] - offset),
-                "right": (anchor[0] - offset, anchor[1] + offset),
+                "left": (anchor[0] - 40, anchor[1] - 120),
+                "right": (anchor[0] - 40, anchor[1] + 120),
                 "center": anchor,
             },
         )
+
+    def test_default_distances_keep_the_previous_positions(self) -> None:
+        # Before x/y were split, main placed left/right at
+        # (anchor_x - offset // 2, anchor_y -/+ offset * 3 // 2) with
+        # offset = 6 cm * 46 px/cm // 2. The new defaults must
+        # reproduce exactly those pixels.
+        data = json.loads(CONFIG_PATH.read_text())["default"]
+        stored = StoredConfigs.model_validate({"default": data}).root["default"]
+        config = Config(
+            animal="test-animal",
+            level=1,
+            is_twitter_trial=True,
+            screen_size=Screen(width=1920, height=1080),
+            stored=stored,
+        )
+        positions = Visual3ptCalibrationV2._fixation_positions(config)
+        anchor = (1920 * 3 // 4, 1080 // 2)
+        old_offset = 6 * 46 // 2
+        self.assertEqual(
+            positions["left"],
+            (anchor[0] - old_offset // 2, anchor[1] - old_offset * 3 // 2),
+        )
+        self.assertEqual(
+            positions["right"],
+            (anchor[0] - old_offset // 2, anchor[1] + old_offset * 3 // 2),
+        )
+        self.assertNotIn("position_distance_cm", data)
 
     def test_every_position_is_used(self) -> None:
         seen: set[str] = set()
