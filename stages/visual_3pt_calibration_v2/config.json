@@ -16,12 +16,12 @@
     "fixation_point_radius_cm": 0.50,
     "fixation_point_inner_radius_ratio": 0.4,
 
-    "position_distance_x_cm": 1.5,
-    "position_distance_y_cm": 4.5,
+    "position_distance_x_cm": 1,
+    "position_distance_y_cm": 3,
 
     "min_touch_duration_ms": 200,
 
-    "reward_duration_ms": 600,
+    "reward_duration_ms": 300,
     "post_reward_stimulus_duration_ms": 1500,
 
     "level_up_threshold": 0.8,
