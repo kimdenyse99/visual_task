@@ -331,8 +331,8 @@ class Visual3ptCalibrationV2(Scene):
         anchor = (screen_size.width * 3 // 4, screen_size.height // 2)
         offset_px = round(config.position_distance_px // 2)
         return {
-            "left": (anchor[0] - offset_px // 2, anchor[1] - offset_px),
-            "right": (anchor[0] - offset_px // 2, anchor[1] + offset_px),
+            "left": (anchor[0] - offset_px // 2, anchor[1] - offset_px * 3 // 2),
+            "right": (anchor[0] - offset_px // 2, anchor[1] + offset_px * 3 // 2),
             "center": anchor,
         }
 
