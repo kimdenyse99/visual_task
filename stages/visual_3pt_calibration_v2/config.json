@@ -16,7 +16,8 @@
     "fixation_point_radius_cm": 0.50,
     "fixation_point_inner_radius_ratio": 0.4,
 
-    "position_distance_cm": 6,
+    "position_distance_x_cm": 1.5,
+    "position_distance_y_cm": 4.5,
 
     "min_touch_duration_ms": 200,
 

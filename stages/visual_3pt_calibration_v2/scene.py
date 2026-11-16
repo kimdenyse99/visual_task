@@ -320,19 +320,20 @@ class Visual3ptCalibrationV2(Scene):
     def _fixation_positions(config: Config) -> dict[PositionName, tuple[int, int]]:
         """The three candidate fixation positions, in pygame (x, y) pixels.
 
-        Same geometry as visual_3pt_calibration's target positions, so data
-        from both stages lines up: an anchor at (3/4 W, 1/2 H) plus two
-        points offset by half of position_distance_cm on each axis. The
-        screen is mounted rotated 90 degrees counter-clockwise, so the
-        labels describe where each point appears to the animal, not its
-        direction in (x, y).
+        A center position at (3/4 W, 1/2 H), plus left and right positions
+        offset from it by position_distance_x_cm (toward smaller x) and
+        position_distance_y_cm (toward smaller y for left, larger y for
+        right). The screen is mounted rotated 90 degrees counter-clockwise,
+        so the labels describe where each point appears to the animal, not
+        its direction in (x, y).
         """
         screen_size = config.screen_size
         anchor = (screen_size.width * 3 // 4, screen_size.height // 2)
-        offset_px = round(config.position_distance_px // 2)
+        offset_x_px = round(config.position_distance_x_px)
+        offset_y_px = round(config.position_distance_y_px)
         return {
-            "left": (anchor[0] - offset_px // 2, anchor[1] - offset_px * 3 // 2),
-            "right": (anchor[0] - offset_px // 2, anchor[1] + offset_px * 3 // 2),
+            "left": (anchor[0] - offset_x_px, anchor[1] - offset_y_px),
+            "right": (anchor[0] - offset_x_px, anchor[1] + offset_y_px),
             "center": anchor,
         }
 
