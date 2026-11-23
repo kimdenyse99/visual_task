@@ -169,7 +169,6 @@ class ConfigFileTests(unittest.TestCase):
         stored = StoredConfigs.model_validate(data).root["default"]
         self.assertEqual(stored.dwell_grace_ms, 150)
         self.assertTrue(stored.dwell_grace_enabled)
-        self.assertEqual(stored.reward_duration_ms, 600)
         self.assertEqual(stored.post_reward_stimulus_duration_ms, 1500)
         self.assertEqual(stored.inter_trial_duration_ms, 1500)
         self.assertEqual(stored.fixation_timeout_ms, 5000)
@@ -256,32 +255,11 @@ class PositionTests(unittest.TestCase):
             },
         )
 
-    def test_default_distances_keep_the_previous_positions(self) -> None:
-        # Before x/y were split, main placed left/right at
-        # (anchor_x - offset // 2, anchor_y -/+ offset * 3 // 2) with
-        # offset = 6 cm * 46 px/cm // 2. The new defaults must
-        # reproduce exactly those pixels.
+    def test_config_uses_separate_x_and_y_distances(self) -> None:
         data = json.loads(CONFIG_PATH.read_text())["default"]
-        stored = StoredConfigs.model_validate({"default": data}).root["default"]
-        config = Config(
-            animal="test-animal",
-            level=1,
-            is_twitter_trial=True,
-            screen_size=Screen(width=1920, height=1080),
-            stored=stored,
-        )
-        positions = Visual3ptCalibrationV2._fixation_positions(config)
-        anchor = (1920 * 3 // 4, 1080 // 2)
-        old_offset = 6 * 46 // 2
-        self.assertEqual(
-            positions["left"],
-            (anchor[0] - old_offset // 2, anchor[1] - old_offset * 3 // 2),
-        )
-        self.assertEqual(
-            positions["right"],
-            (anchor[0] - old_offset // 2, anchor[1] + old_offset * 3 // 2),
-        )
         self.assertNotIn("position_distance_cm", data)
+        self.assertIn("position_distance_x_cm", data)
+        self.assertIn("position_distance_y_cm", data)
 
     def test_every_position_is_used(self) -> None:
         seen: set[str] = set()

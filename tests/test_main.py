@@ -7,6 +7,7 @@ import main
 from stages.visual_3pt_calibration import Visual3ptCalibration
 from stages.visual_3pt_calibration_v2 import Visual3ptCalibrationV2
 from stages.visual_stability_training import VisualStabilityTraining
+from stages.task_spatial_frequency import TaskSpatialFrequency
 from stages.visual_tracing import VisualTracing
 
 
@@ -20,6 +21,7 @@ class StartupFlowTests(unittest.TestCase):
                     Visual3ptCalibration,
                     Visual3ptCalibrationV2,
                     VisualTracing,
+                    TaskSpatialFrequency,
                 )
             },
             {
@@ -27,6 +29,7 @@ class StartupFlowTests(unittest.TestCase):
                 "visual3pt_calibration",
                 "visual_3pt_calibration_v2",
                 "visual_tracing",
+                "task_spatial_frequency",
             },
         )
 
@@ -49,6 +52,7 @@ class StartupFlowTests(unittest.TestCase):
                 Visual3ptCalibration,
                 Visual3ptCalibrationV2,
                 VisualTracing,
+                TaskSpatialFrequency,
             ]
         )
         run_wizard.assert_called_once_with(scene_manager)

@@ -1,0 +1,79 @@
+{
+  "default": {
+    "inter_trial_duration_ms": 1500,
+    "reward_duration_ms": 1000,
+    "border_width": 40,
+    "pixels_per_cm": 46,
+    "background_color": [127, 127, 127],
+
+    "dwell_grace_enabled": true,
+    "dwell_grace_ms": 150,
+    "gaze_lost_grace_ms": 5000,
+    "min_touch_duration_ms": 100,
+    "show_gaze_trace": false,
+    "gaze_trace_duration_ms": 500,
+    "show_tolerance_areas": false,
+
+    "fixation_point_radius_cm": 0.50,
+    "fixation_point_inner_radius_ratio": 0.4,
+    "keep_fixation_point_after_fixation": true,
+
+    "fixation_delay_min_ms": 1000,
+    "fixation_delay_max_ms": 2000,
+
+    "position_distance_x_cm": 1.5,
+    "position_distance_y_cm": 3,
+
+    "stimulus_duration_ms": 2000,
+    "stimulus_left_weight": 1,
+    "stimulus_right_weight": 1,
+    "stimulus_none_weight": 1,
+
+    "target_size_cm": 1.5,
+    "gabor_contrast": 0.5,
+    "gabor_orientation_deg": 0,
+    "gabor_phase_deg": 0,
+
+    "level_up_threshold": 0.8,
+    "level_up_trial_count_threshold": 200,
+
+    "levels": {
+      "1": {
+        "response_window_min_ms": 50,
+        "response_window_max_ms": 800,
+        "spatial_frequency_min_cpcm": 1,
+        "spatial_frequency_max_cpcm": 4,
+        "spatial_frequency_increment_cpcm": 0.5,
+        "fixation_tolerance_cm": 1,
+        "stimulus_tolerance_cm": 0.5
+      },
+      "2": {
+        "response_window_min_ms": 50,
+        "response_window_max_ms": 800,
+        "spatial_frequency_min_cpcm": 1,
+        "spatial_frequency_max_cpcm": 4,
+        "spatial_frequency_increment_cpcm": 0.5,
+        "fixation_tolerance_cm": 0.5,
+        "stimulus_tolerance_cm": 0.5
+      },
+      "3": {
+        "response_window_min_ms": 50,
+        "response_window_max_ms": 800,
+        "spatial_frequency_min_cpcm": 1,
+        "spatial_frequency_max_cpcm": 4,
+        "spatial_frequency_increment_cpcm": 0.5,
+        "fixation_tolerance_cm": 0.25,
+        "stimulus_tolerance_cm": 0.5
+      },
+      "4": {
+        "response_window_min_ms": 50,
+        "response_window_max_ms": 800,
+        "spatial_frequency_min_cpcm": 1,
+        "spatial_frequency_max_cpcm": 4,
+        "spatial_frequency_increment_cpcm": 0.5,
+        "fixation_tolerance_cm": 0,
+        "stimulus_tolerance_cm": 0.5
+      }
+    }
+  }
+}
