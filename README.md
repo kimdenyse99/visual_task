@@ -15,7 +15,7 @@ Registered in `main.py` and run in this order by `mxbiflow`'s scene manager:
 | `visual_3pt_calibration` | `Visual3ptCalibration` | Fixation → randomized blank gap → target at one of three positions. Used to collect calibration data. |
 | `visual_3pt_calibration_v2` | `Visual3ptCalibrationV2` | Fixation point at one of three positions; gaze dwelling within a configurable radius of it gives an immediate reward while a random marmoset GIF plays in its place. No gaze within `fixation_timeout_ms` (default 5 s) is a timeout. |
 | `visual_tracing` | `VisualTracing` | Fixation → a circular target placed at a random position in the right half of the screen. |
-| `task_spatial_frequency` | `TaskSpatialFrequency` | Fixation → random delay → a Gabor patch on the left, on the right, or no stimulus. Gaze on the patch within the level's reward time window, or held on fixation when nothing appears, is rewarded. Spatial frequency range (cycles/cm), reward window and tolerance areas are set per level. |
+| `task_michelson_contrast` | `TaskMichelsonContrast` | Fixation (5 s limit) → 100–200 ms delay holding fixation → a Gabor (random orientation) on the left or right at a contrast drawn from the level's weighted list. Gaze on it within the 0–500 ms reward window is rewarded with a marmoset GIF flashed in its place; 0% contrast trials reward looking at neither side and are counted separately. |
 
 Each stage has its own `config.json` (per-animal levels, timings, sizes,
 reward durations, level-up thresholds) and `models.py` (Pydantic config and

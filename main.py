@@ -18,7 +18,7 @@ from mxbiflow.utils.logger import setup_logging
 from stages.visual_3pt_calibration import Visual3ptCalibration
 from stages.visual_3pt_calibration_v2 import Visual3ptCalibrationV2
 from stages.visual_stability_training import VisualStabilityTraining
-from stages.task_spatial_frequency import TaskSpatialFrequency
+from stages.task_michelson_contrast import TaskMichelsonContrast
 from stages.visual_tracing import VisualTracing
 
 #Game code
@@ -38,7 +38,7 @@ def main() -> None:
             Visual3ptCalibration,
             Visual3ptCalibrationV2,
             VisualTracing,
-            TaskSpatialFrequency,
+            TaskMichelsonContrast,
         ]
     )
 

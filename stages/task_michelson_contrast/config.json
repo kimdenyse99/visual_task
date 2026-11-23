@@ -1,0 +1,75 @@
+{
+  "default": {
+    "inter_trial_duration_ms": 500,
+    "reward_duration_ms": 1000,
+    "reward_gifs": ["m001.gif", "m006.gif", "m007.gif", "m009.gif"],
+    "border_width": 40,
+    "pixels_per_cm": 46,
+    "background_color": [127, 127, 127],
+
+    "min_touch_duration_ms": 100,
+    "gaze_lost_grace_ms": 5000,
+    "show_gaze_trace": false,
+    "gaze_trace_duration_ms": 500,
+    "show_tolerance_areas": false,
+
+    "fixation_point_radius_cm": 0.50,
+    "fixation_point_inner_radius_ratio": 0.4,
+    "keep_fixation_point_after_fixation": true,
+    "fixation_timeout_ms": 5000,
+    "fixation_delay_min_ms": 100,
+    "fixation_delay_max_ms": 200,
+
+    "fixation_tolerance_cm": 1,
+    "stimulus_tolerance_cm": 0.5,
+
+    "position_distance_x_cm": 1.5,
+    "position_distance_y_cm": 3,
+
+    "response_window_min_ms": 0,
+    "response_window_max_ms": 500,
+    "stimulus_duration_ms": 1000,
+
+    "target_size_cm": 1.5,
+    "spatial_frequency_cpcm": 4,
+    "gabor_orientation_min_deg": 0,
+    "gabor_orientation_max_deg": 180,
+    "gabor_phase_deg": 0,
+
+    "level_up_threshold": 0.8,
+    "level_up_trial_count_threshold": 200,
+
+    "levels": {
+      "1": {
+        "contrasts": [
+          { "contrast_percent": 0, "weight": 1 },
+          { "contrast_percent": 50, "weight": 3 }
+        ]
+      },
+      "2": {
+        "contrasts": [
+          { "contrast_percent": 0, "weight": 1 },
+          { "contrast_percent": 25, "weight": 1 },
+          { "contrast_percent": 50, "weight": 2 }
+        ]
+      },
+      "3": {
+        "contrasts": [
+          { "contrast_percent": 0, "weight": 1 },
+          { "contrast_percent": 12.5, "weight": 1 },
+          { "contrast_percent": 25, "weight": 1 },
+          { "contrast_percent": 50, "weight": 1 }
+        ]
+      },
+      "4": {
+        "contrasts": [
+          { "contrast_percent": 0, "weight": 1 },
+          { "contrast_percent": 6.25, "weight": 1 },
+          { "contrast_percent": 12.5, "weight": 1 },
+          { "contrast_percent": 25, "weight": 1 },
+          { "contrast_percent": 50, "weight": 1 }
+        ]
+      }
+    }
+  }
+}
