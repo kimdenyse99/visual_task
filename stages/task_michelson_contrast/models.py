@@ -92,9 +92,9 @@ class Result(BaseModel):
     # GIF flashed with the reward, if one was given.
     reward_asset: str | None = None
 
-    # True when losing the eye signal (a blink) ended the trial: during the
-    # fixation dwell (response "no_fixation") or with the Gabor shown
-    # ("blinked").
+    # True when losing the eye signal (a blink) ended the trial: the eye
+    # still missing when the Gabor was due (response "broke_fixation") or
+    # a blink with the Gabor shown ("blinked").
     ended_by_blink: bool = False
 
     trial_reward_count: int = 0

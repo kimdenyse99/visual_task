@@ -26,12 +26,13 @@ Trial flow (one scene instance per trial, like every other stage here):
                while the reward is dispensed.
 5. blank     - inter_trial_duration_ms of empty screen, then the next trial.
 
-Blinks (the eye tracker losing the gaze) are fine before gaze reaches the
-fixation point, and during the delay as long as the eye is back before the
-Gabor is due. A blink that interrupts the fixation dwell is a TIMEOUT
-(no_fixation); the eye still missing when the delay ends is a TIMEOUT
-(broke_fixation); a blink while the Gabor is shown is a TIMEOUT (blinked).
-A lost signal never cancels a trial by itself. See _on_gaze_signal_lost.
+Blinks (the eye tracker losing the gaze) are fine in the fixation phase -
+a blink only restarts the 100 ms dwell, and the trial fails only if no full
+dwell happens within fixation_timeout_ms (no_fixation). They are fine in
+the delay as long as the eye is back before the Gabor is due; otherwise a
+TIMEOUT (broke_fixation). A blink while the Gabor is shown is a TIMEOUT
+(blinked). A lost signal never cancels a trial by itself. See
+_on_gaze_signal_lost.
 """
 
 import math
@@ -905,20 +906,17 @@ class TaskMichelsonContrast(Scene):
         """The eye tracker has no sample this frame (a blink, or the pupil
         lost). What that means depends on the phase:
 
-        * fixation - fine while gaze isn't on the fixation point yet (it
-          just counts nowhere); interrupting the dwell on the point is a
-          TIMEOUT (no_fixation).
+        * fixation - fine: the gaze counts nowhere and any dwell in progress
+          on the fixation point starts over; the trial goes on until a full
+          dwell or fixation_timeout_ms.
+        * delay    - fine: the fixation check pauses until the eye is back,
+          which must happen before the Gabor is due (see
+          _start_stimulus_phase).
         * stimulus - a TIMEOUT (blinked), left out of the level-up rate.
-        * delay    - fine: the fixation check pauses until the eye is back
-          (see _check_fixation_held), within the lost-signal grace.
         * reward / blank - the trial is already decided; ignored.
         """
         if self._phase == "fixation":
-            if tracker.inside_since_ms is not None and not tracker.fired:
-                self._result.ended_by_blink = True
-                self._resolve(ResultEnum.TIMEOUT, "no_fixation")
-            else:
-                tracker.reset()
+            tracker.reset()
         elif self._phase == "stimulus":
             self._result.ended_by_blink = True
             self._resolve(ResultEnum.TIMEOUT, "blinked")

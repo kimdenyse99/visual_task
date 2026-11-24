@@ -555,8 +555,8 @@ class DwellGraceTests(unittest.TestCase):
 
 
 class LostGazeSignalTests(unittest.TestCase):
-    """Blinks are fine before gaze reaches the fixation point and during the
-    delay; interrupting the fixation dwell or the Gabor ends the trial."""
+    """Blinks are fine in the fixation phase (the dwell restarts) and in the
+    delay until the Gabor is due; a blink with the Gabor shown ends it."""
 
     def _lose(self, scene: Any) -> None:
         scene._mxbiflow.eye_sample = None
@@ -590,19 +590,44 @@ class LostGazeSignalTests(unittest.TestCase):
         self.assertEqual(scene._phase, "delay")
         self.assertFalse(scene._result.ended_by_blink)
 
-    def test_blink_during_the_fixation_dwell_is_a_timeout(self) -> None:
+    def test_blink_during_the_fixation_dwell_restarts_it(self) -> None:
         scene = make_scene()
         with Clock() as clock:
             scene._on_trial_start()
             scene._on_press(GAZE_TOUCH_ID, scene._positions["center"])
             clock.advance_ms(60)
             self._lose(scene)
+            clock.advance_ms(200)
+            self._lose(scene)
+            self.assertEqual(scene._result.result, ResultEnum.PENDING)
+            self.assertEqual(scene._phase, "fixation")
+            # Back on the point: a fresh, full 100 ms is needed.
+            self._regain(scene, "center")
+            clock.advance_ms(60)
+            scene.update(0.0)
+            self.assertEqual(scene._phase, "fixation")
+            clock.advance_ms(41)  # 101 ms: clear of float rounding
+            scene.update(0.0)
+        self.assertEqual(scene._phase, "delay")
+        self.assertEqual(scene._result.result, ResultEnum.PENDING)
+
+    def test_repeated_blinks_only_fail_at_the_fixation_limit(self) -> None:
+        scene = make_scene()
+        with Clock() as clock:
+            scene._on_trial_start()
+            scene._on_press(GAZE_TOUCH_ID, scene._positions["center"])
+            for _ in range(10):
+                self._regain(scene, "center")
+                clock.advance_ms(60)
+                scene.update(0.0)
+                self._lose(scene)
+                clock.advance_ms(100)
+                self._lose(scene)
+            self.assertEqual(scene._result.result, ResultEnum.PENDING)
+        scene._on_fixation_timeout()
         self.assertEqual(scene._result.result, ResultEnum.TIMEOUT)
         self.assertEqual(scene._result.response, "no_fixation")
-        self.assertTrue(scene._result.ended_by_blink)
-        self.assertEqual(scene._phase, "blank")
-        self.assertEqual(last_timer(scene), (500, scene.quit))
-        self.assertFalse(scene._result.counts_toward_rate)
+        self.assertFalse(scene._result.ended_by_blink)
 
     def test_blink_during_delay_does_not_break_fixation(self) -> None:
         scene = make_scene()
