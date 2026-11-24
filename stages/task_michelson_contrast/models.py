@@ -51,6 +51,7 @@ type StimulusSide = Literal["left", "right"]
 #   broke_fixation  gaze left the fixation point during the delay
 #   withheld        0% contrast, gaze stayed off both sides (rewarded)
 #   false_alarm     0% contrast, gaze went to a side
+#   blinked         the eye signal was lost while the Gabor was shown
 type Response = Literal[
     "in_window",
     "early",
@@ -61,6 +62,7 @@ type Response = Literal[
     "broke_fixation",
     "withheld",
     "false_alarm",
+    "blinked",
 ]
 
 
@@ -90,6 +92,11 @@ class Result(BaseModel):
     # GIF flashed with the reward, if one was given.
     reward_asset: str | None = None
 
+    # True when losing the eye signal (a blink) ended the trial: during the
+    # fixation dwell (response "no_fixation") or with the Gabor shown
+    # ("blinked").
+    ended_by_blink: bool = False
+
     trial_reward_count: int = 0
     trial_manual_reward_count: int = 0
 
@@ -114,6 +121,7 @@ class Result(BaseModel):
             self.result is ResultEnum.CANCELLED
             or self.is_zero_contrast
             or self.is_fixation_failure
+            or self.response == "blinked"
         )
 
 
@@ -194,12 +202,16 @@ class StoredConfig(BaseModel):
     position_distance_x_cm: float = Field(default=1.5, ge=0)
     position_distance_y_cm: float = Field(default=3.0, ge=0)
 
-    # Gaze must stay inside a tolerance area this long to count. Leaving
-    # the area resets it at once (no grace period).
+    # Gaze must stay inside a tolerance area this long to count.
     min_touch_duration_ms: NonNegativeInt = 100
-    # How long the eye tracker may lose the gaze signal entirely before
-    # the trial is cancelled (see gaze_input.GazeDwellDriver).
-    gaze_lost_grace_ms: PositiveInt = 5000
+    # Dwell grace: when enabled, gaze may leave a tolerance area for up to
+    # dwell_grace_ms without resetting the dwell, or (during the delay)
+    # without breaking fixation. When disabled, leaving resets / breaks it
+    # at once.
+    dwell_grace_enabled: bool = False
+    dwell_grace_ms: PositiveInt = 150
+    # Blinks (the eye tracker losing the gaze) have fixed rules per phase,
+    # with no setting: see the scene module's docstring.
 
     show_gaze_trace: bool = False
     gaze_trace_duration_ms: NonNegativeInt = 500
@@ -276,6 +288,12 @@ class Config(BaseModel):
 
     def cm_to_px(self, cm: float) -> float:
         return cm * self.stored.pixels_per_cm
+
+    @property
+    def dwell_grace_ms(self) -> float:
+        """The dwell grace in effect (0 when disabled)."""
+        stored = self.stored
+        return stored.dwell_grace_ms if stored.dwell_grace_enabled else 0.0
 
     @property
     def fixation_point_radius_px(self) -> float:
