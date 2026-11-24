@@ -148,6 +148,8 @@ class TaskMichelsonContrast(Scene):
         self._phase_task: _CancellableTask | None = None
         self._fixation_shown_at_ms = 0.0
         self._stimulus_onset_ms = 0.0
+        # True while the eye tracker has no gaze sample (blink, pupil lost).
+        self._gaze_lost = False
 
         self._animal = self._mxbiflow.session.require_current_animal()
         self._config = self._init_config(self._animal, self._mxbiflow)
@@ -465,6 +467,9 @@ class TaskMichelsonContrast(Scene):
 
     def update(self, dt_s: float) -> None:
         self._control_buttons.update(dt_s)
+        # Read before the driver runs, so a returning sample is scored on
+        # the frame it arrives.
+        self._gaze_lost = self._mxbiflow.eye_sample is None
         self._gaze_driver.update()
         self._check_all_trackers()
         if self._phase == "delay":
@@ -552,9 +557,12 @@ class TaskMichelsonContrast(Scene):
 
     def _check_fixation_held(self) -> None:
         """During the delay: gaze leaving the fixation area ends the trial
-        at once as a TIMEOUT (no grace period). A momentary loss of the eye
-        signal itself is not a departure - the last gaze position is kept
-        until gaze_lost_grace_ms (see gaze_input.GazeDwellDriver)."""
+        at once as a TIMEOUT (no grace period). Losing the eye signal is
+        not a departure: the check pauses until gaze returns. If it stays
+        lost for gaze_lost_grace_ms the trial is cancelled instead (see
+        on_gaze_abandoned)."""
+        if self._is_gaze_lost():
+            return
         is_inside = any(
             tracker.last_pos is not None and self._is_in_area(tracker.last_pos, "center")
             for tracker in self._trackers.values()
@@ -669,18 +677,16 @@ class TaskMichelsonContrast(Scene):
         level_correct = 0
         level_valid = 0
         for trial in trials.root.values():
-            if (
-                trial.animal.level != level
-                or trial.result is ResultEnum.CANCELLED
-                or trial.is_zero_contrast
-            ):
+            if trial.animal.level != level or not trial.counts_toward_rate:
                 continue
             level_valid += 1
             if trial.result is ResultEnum.CORRECT:
                 level_correct += 1
 
-        # Correct rate over completed trials with a visible Gabor: incorrect
-        # and timeouts count against it; 0% contrast trials are left out.
+        # Correct rate over trials where a visible Gabor was shown: incorrect
+        # and timeouts (early, late, missed) count against it. 0% contrast
+        # trials and trials that ended before the Gabor appeared (no
+        # fixation, broke fixation) are left out.
         level_correct_rate = level_correct / level_valid if level_valid else 0
 
         is_level_up = (
@@ -726,11 +732,15 @@ class TaskMichelsonContrast(Scene):
         counts = dict.fromkeys(ResultEnum, 0)
         zero_total = 0
         zero_rewarded = 0
+        no_fixation = 0
         reward = 0
         for trial in self._load_trials().root.values():
             reward += trial.trial_reward_count + trial.trial_manual_reward_count
             if trial.result is ResultEnum.CANCELLED:
                 counts[ResultEnum.CANCELLED] += 1
+                continue
+            if trial.is_fixation_failure:
+                no_fixation += 1
                 continue
             if trial.is_zero_contrast:
                 zero_total += 1
@@ -750,6 +760,7 @@ class TaskMichelsonContrast(Scene):
             f"Error {counts[ResultEnum.INCORRECT]} | "
             f"Timeout {counts[ResultEnum.TIMEOUT]} | "
             f"0% {zero_rewarded}/{zero_total} | "
+            f"No fix {no_fixation} | "
             f"Reward {reward} | "
             f"Cancelled {counts[ResultEnum.CANCELLED]}"
         )
@@ -813,6 +824,9 @@ class TaskMichelsonContrast(Scene):
             if tracker.last_pos is not None:
                 self._evaluate_tracker(touch_id, tracker.last_pos)
 
+    def _is_gaze_lost(self) -> bool:
+        return self._gaze_lost and GAZE_TOUCH_ID in self._trackers
+
     def _area_radius_px(self, area: str) -> float:
         if area == "center":
             return self._config.fixation_tolerance_distance_px
@@ -834,6 +848,12 @@ class TaskMichelsonContrast(Scene):
     def _evaluate_tracker(self, touch_id: int, pos: tuple[int, int]) -> None:
         tracker = self._trackers.get(touch_id)
         if tracker is None:
+            return
+        if touch_id == GAZE_TOUCH_ID and self._gaze_lost:
+            # No eye signal: the gaze counts nowhere. A dwell in progress
+            # starts over once the eye is back.
+            if not tracker.fired:
+                tracker.reset()
             return
         # Keep the position current even after a dwell has fired: the
         # delay phase checks it to see whether fixation is still held.

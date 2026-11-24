@@ -99,6 +99,23 @@ class Result(BaseModel):
     def is_zero_contrast(self) -> bool:
         return self.contrast_percent == 0
 
+    @property
+    def is_fixation_failure(self) -> bool:
+        """Ended before the Gabor appeared: never fixated, or left the
+        fixation point during the delay."""
+        return self.response in ("no_fixation", "broke_fixation")
+
+    @property
+    def counts_toward_rate(self) -> bool:
+        """Whether this trial is part of the level-up correct rate: the
+        Gabor was shown at a visible contrast and the trial wasn't
+        cancelled."""
+        return not (
+            self.result is ResultEnum.CANCELLED
+            or self.is_zero_contrast
+            or self.is_fixation_failure
+        )
+
 
 class ContrastOption(BaseModel):
     # Michelson contrast of the Gabor's grating, in percent (0 = invisible).

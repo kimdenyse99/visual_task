@@ -14,6 +14,7 @@ from pygame.sprite import Group
 
 from assets import GIF_STIMULUS_DIR, MARMOSET_IMAGE_PATHS
 from gabor_sprite import GaborSprite, gabor_pixels
+from gaze_input import GAZE_TOUCH_ID
 from stages.task_michelson_contrast import TaskMichelsonContrast
 from stages.task_michelson_contrast.models import (
     Config,
@@ -113,6 +114,7 @@ def make_scene(
     scene._phase_task = None
     scene._fixation_shown_at_ms = 0.0
     scene._stimulus_onset_ms = 0.0
+    scene._gaze_lost = False
     scene._trackers = {}
     scene._trajectories = {}
     scene._trace_points = []
@@ -495,6 +497,90 @@ class ZeroContrastTests(unittest.TestCase):
             scene._rewarder.give_reward.assert_not_called()
 
 
+class LostGazeSignalTests(unittest.TestCase):
+    """While the eye tracker has no sample, gaze counts nowhere; during the
+    delay a loss pauses the fixation check instead of breaking it."""
+
+    def _lose(self, scene: Any) -> None:
+        scene._mxbiflow.eye_sample = None
+        scene.update(0.0)
+
+    def _regain(self, scene: Any, area: str) -> None:
+        scene._mxbiflow.eye_sample = Mock()
+        scene.update(0.0)  # the driver is mocked, so move the gaze by hand
+        scene._on_motion(GAZE_TOUCH_ID, scene._positions[area])
+
+    def _gaze_fixate(self, scene: Any, clock: Clock) -> None:
+        scene._on_trial_start()
+        scene._on_press(GAZE_TOUCH_ID, scene._positions["center"])
+        clock.advance_ms(100)
+        scene.update(0.0)
+        assert scene._phase == "delay"
+
+    def test_lost_signal_does_not_count_toward_fixation(self) -> None:
+        scene = make_scene()
+        with Clock() as clock:
+            scene._on_trial_start()
+            scene._on_press(GAZE_TOUCH_ID, scene._positions["center"])
+            clock.advance_ms(60)
+            self._lose(scene)
+            clock.advance_ms(500)
+            self._lose(scene)
+            self.assertEqual(scene._phase, "fixation")
+            # Back on the point: the 100 ms dwell starts over.
+            self._regain(scene, "center")
+            clock.advance_ms(60)
+            scene.update(0.0)
+            self.assertEqual(scene._phase, "fixation")
+            clock.advance_ms(41)  # 101 ms: clear of float rounding
+            scene.update(0.0)
+        self.assertEqual(scene._phase, "delay")
+
+    def test_blink_during_delay_does_not_break_fixation(self) -> None:
+        scene = make_scene()
+        with Clock() as clock:
+            self._gaze_fixate(scene, clock)
+            self._lose(scene)
+            clock.advance_ms(300)
+            self._lose(scene)
+            self.assertEqual(scene._result.result, ResultEnum.PENDING)
+            self._regain(scene, "center")
+            scene.update(0.0)
+            scene._start_stimulus_phase()
+        self.assertEqual(scene._phase, "stimulus")
+        self.assertEqual(scene._result.result, ResultEnum.PENDING)
+
+    def test_returning_off_the_point_during_delay_breaks_fixation(self) -> None:
+        scene = make_scene()
+        with Clock() as clock:
+            self._gaze_fixate(scene, clock)
+            self._lose(scene)
+            self._regain(scene, "left")
+            scene.update(0.0)
+        self.assertEqual(scene._result.result, ResultEnum.TIMEOUT)
+        self.assertEqual(scene._result.response, "broke_fixation")
+
+    def test_lost_signal_restarts_a_dwell_on_the_gabor(self) -> None:
+        scene = make_scene("left")
+        with Clock() as clock:
+            self._gaze_fixate(scene, clock)
+            scene._start_stimulus_phase()
+            scene._on_motion(GAZE_TOUCH_ID, scene._positions["left"])
+            clock.advance_ms(60)
+            self._lose(scene)
+            clock.advance_ms(100)
+            self._lose(scene)
+            self.assertEqual(scene._result.result, ResultEnum.PENDING)
+            self._regain(scene, "left")
+            clock.advance_ms(60)
+            scene.update(0.0)
+            self.assertEqual(scene._result.result, ResultEnum.PENDING)
+            clock.advance_ms(41)  # 101 ms: clear of float rounding
+            scene.update(0.0)
+        self.assertEqual(scene._result.result, ResultEnum.CORRECT)
+        self.assertAlmostEqual(scene._result.response_latency_ms, 261, places=3)
+
+
 class EndOfTrialTests(unittest.TestCase):
     def test_gaze_loss_after_resolution_does_not_cut_trial_short(self) -> None:
         scene = make_scene()
@@ -547,6 +633,27 @@ class SettlementTests(unittest.TestCase):
         previous = [(ResultEnum.CORRECT, 50)] * 3 + [(ResultEnum.INCORRECT, 0)] * 10
         self.assertTrue(self._settle(scene, previous))
 
+    def test_fixation_failures_are_left_out_of_the_rate(self) -> None:
+        scene = make_scene(levels=TWO_LEVELS)
+        scene._result.result = ResultEnum.CORRECT
+        trials = TrialResults(
+            root={
+                **{
+                    i: make_result(trial_id=i, result=ResultEnum.CORRECT)
+                    for i in (2, 3, 4)
+                },
+                **{
+                    i: make_result(
+                        trial_id=i, result=ResultEnum.TIMEOUT, response=response
+                    )
+                    for i, response in ((5, "no_fixation"), (6, "broke_fixation"))
+                },
+            }
+        )
+        scene._load_trials = Mock(return_value=trials)
+        scene._save_trials = Mock()
+        self.assertTrue(scene._settlement())
+
     def test_incorrect_and_timeouts_count_against_the_rate(self) -> None:
         scene = make_scene(levels=TWO_LEVELS)
         scene._result.result = ResultEnum.CORRECT
@@ -565,13 +672,24 @@ class SettlementTests(unittest.TestCase):
                 1: make_result(trial_id=1, result=ResultEnum.CORRECT, contrast=50),
                 2: make_result(trial_id=2, result=ResultEnum.CORRECT, contrast=0),
                 3: make_result(trial_id=3, result=ResultEnum.INCORRECT, contrast=0),
+                4: make_result(
+                    trial_id=4, result=ResultEnum.TIMEOUT, response="no_fixation"
+                ),
+                5: make_result(
+                    trial_id=5,
+                    result=ResultEnum.TIMEOUT,
+                    response="broke_fixation",
+                    contrast=0,
+                ),
             }
         )
         scene._load_trials = Mock(return_value=trials)
         summary = scene._result_summary()
         self.assertIn("Correct 1", summary)
         self.assertIn("Error 0", summary)
+        self.assertIn("Timeout 0", summary)
         self.assertIn("0% 1/2", summary)
+        self.assertIn("No fix 2", summary)
 
 
 if __name__ == "__main__":
