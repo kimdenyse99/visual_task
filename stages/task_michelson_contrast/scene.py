@@ -27,9 +27,11 @@ Trial flow (one scene instance per trial, like every other stage here):
 5. blank     - inter_trial_duration_ms of empty screen, then the next trial.
 
 Blinks (the eye tracker losing the gaze) are fine before gaze reaches the
-fixation point and during the delay. A blink that interrupts the fixation
-dwell is a TIMEOUT (no_fixation); a blink while the Gabor is shown is a
-TIMEOUT (blinked). See _on_gaze_signal_lost.
+fixation point, and during the delay as long as the eye is back before the
+Gabor is due. A blink that interrupts the fixation dwell is a TIMEOUT
+(no_fixation); the eye still missing when the delay ends is a TIMEOUT
+(broke_fixation); a blink while the Gabor is shown is a TIMEOUT (blinked).
+A lost signal never cancels a trial by itself. See _on_gaze_signal_lost.
 """
 
 import math
@@ -175,7 +177,10 @@ class TaskMichelsonContrast(Scene):
         self._gaze_driver = GazeDwellDriver(
             _get_gaze_sample,
             self,
-            lost_grace_ms=self._config.gaze_lost_grace_ms,
+            # Blinks are handled per phase by this scene
+            # (_on_gaze_signal_lost), so the driver never gives up on a
+            # lost signal by itself.
+            lost_grace_ms=math.inf,
             already_down=GAZE_TOUCH_ID in self._trackers,
         )
 
@@ -564,8 +569,8 @@ class TaskMichelsonContrast(Scene):
         """During the delay: gaze leaving the fixation area for longer than
         the dwell grace (at once when it is disabled) ends the trial as a
         TIMEOUT. Losing the eye signal is not a departure: the check pauses
-        until gaze returns. If it stays lost past the lost-signal grace the
-        trial is cancelled instead (see on_gaze_abandoned)."""
+        until gaze returns, which must happen before the Gabor is due (see
+        _start_stimulus_phase)."""
         if self._is_gaze_lost():
             return
         is_inside = any(
@@ -584,6 +589,11 @@ class TaskMichelsonContrast(Scene):
     def _start_stimulus_phase(self) -> None:
         self._phase_task = None
         if self._phase != "delay":
+            return
+        # The eye must be back (and on the fixation point) by now.
+        if self._is_gaze_lost():
+            self._result.ended_by_blink = True
+            self._resolve(ResultEnum.TIMEOUT, "broke_fixation")
             return
         # Catch a departure in the same frame the delay ends.
         self._check_fixation_held()
@@ -985,10 +995,9 @@ class TaskMichelsonContrast(Scene):
         event.post(Event(QUIT))
 
     def on_gaze_abandoned(self) -> None:
-        """Gaze signal lost for longer than the lost-signal grace. An
-        unresolved trial is cancelled; a resolved one is left to finish."""
-        if self._running and self._result.result == ResultEnum.PENDING:
-            self.quit()
+        """Required by GazeDwellDriver, but never called here: the driver
+        is given an infinite lost-signal grace, and each phase handles a
+        lost signal itself (see _on_gaze_signal_lost)."""
 
     def _on_touch_penalized(self) -> None:
         """A touchscreen touch abandons an unresolved trial with no

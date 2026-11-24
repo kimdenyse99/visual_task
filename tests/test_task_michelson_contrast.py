@@ -14,7 +14,7 @@ from pygame.sprite import Group
 
 from assets import GIF_STIMULUS_DIR, MARMOSET_IMAGE_PATHS
 from gabor_sprite import GaborSprite, gabor_pixels
-from gaze_input import GAZE_TOUCH_ID, GazeDwellDriver
+from gaze_input import GAZE_TOUCH_ID
 from stages.task_michelson_contrast import TaskMichelsonContrast
 from stages.task_michelson_contrast.models import (
     Config,
@@ -267,30 +267,21 @@ class ConfigFileTests(unittest.TestCase):
             for option in level["contrasts"]:
                 self.assertEqual(set(option), {"contrast_percent", "weight"})
 
-    def test_grace_switches_and_defaults(self) -> None:
+    def test_dwell_grace_switch_and_defaults(self) -> None:
         data = self._data()
         self.assertIs(data["dwell_grace_enabled"], False)
         self.assertEqual(data["dwell_grace_ms"], 150)
-        self.assertIs(data["gaze_lost_grace_enabled"], True)
-        self.assertEqual(data["gaze_lost_grace_ms"], 5000)
+        self.assertNotIn("gaze_lost_grace_enabled", data)
+        self.assertNotIn("gaze_lost_grace_ms", data)
 
-    def test_grace_in_effect_follows_the_switches(self) -> None:
-        off = make_config(dwell_grace_enabled=False, gaze_lost_grace_enabled=False)
-        self.assertEqual(off.dwell_grace_ms, 0)
-        self.assertEqual(off.gaze_lost_grace_ms, 0)
-        on = make_config(
-            dwell_grace_enabled=True,
-            dwell_grace_ms=200,
-            gaze_lost_grace_enabled=True,
-            gaze_lost_grace_ms=3000,
-        )
+    def test_dwell_grace_in_effect_follows_the_switch(self) -> None:
+        self.assertEqual(make_config(dwell_grace_enabled=False).dwell_grace_ms, 0)
+        on = make_config(dwell_grace_enabled=True, dwell_grace_ms=200)
         self.assertEqual(on.dwell_grace_ms, 200)
-        self.assertEqual(on.gaze_lost_grace_ms, 3000)
 
-    def test_grace_durations_must_be_positive(self) -> None:
-        for key in ("dwell_grace_ms", "gaze_lost_grace_ms"):
-            with self.subTest(key=key), self.assertRaises(ValidationError):
-                make_stored_config(**{key: 0})
+    def test_dwell_grace_must_be_positive(self) -> None:
+        with self.assertRaises(ValidationError):
+            make_stored_config(dwell_grace_ms=0)
 
     def test_invalid_settings_are_rejected(self) -> None:
         bad_settings: list[dict[str, Any]] = [
@@ -563,32 +554,6 @@ class DwellGraceTests(unittest.TestCase):
         self.assertEqual(scene._result.response, "broke_fixation")
 
 
-class LostSignalGraceSwitchTests(unittest.TestCase):
-    """The scene hands config.gaze_lost_grace_ms to GazeDwellDriver; check
-    what the driver does with 0 (disabled) versus a grace period."""
-
-    def _driver(self, lost_grace_ms: float) -> tuple[GazeDwellDriver, Mock, list[Any]]:
-        samples: list[Any] = [Mock(x=10.0, y=10.0)]
-        scene = Mock()
-        driver = GazeDwellDriver(lambda: samples[0], scene, lost_grace_ms=lost_grace_ms)
-        driver.update()  # gaze picked up
-        return driver, scene, samples
-
-    def test_disabled_cancels_as_soon_as_the_signal_is_lost(self) -> None:
-        driver, scene, samples = self._driver(make_config(gaze_lost_grace_enabled=False).gaze_lost_grace_ms)
-        samples[0] = None
-        driver.update()
-        driver.update()
-        scene.on_gaze_abandoned.assert_called_once_with()
-
-    def test_enabled_waits_for_the_signal_to_return(self) -> None:
-        driver, scene, samples = self._driver(make_config().gaze_lost_grace_ms)
-        samples[0] = None
-        driver.update()
-        driver.update()
-        scene.on_gaze_abandoned.assert_not_called()
-
-
 class LostGazeSignalTests(unittest.TestCase):
     """Blinks are fine before gaze reaches the fixation point and during the
     delay; interrupting the fixation dwell or the Gabor ends the trial."""
@@ -679,6 +644,35 @@ class LostGazeSignalTests(unittest.TestCase):
             scene._rewarder.give_reward.assert_not_called()
             self.assertFalse(scene._result.counts_toward_rate)
 
+    def test_eye_still_lost_when_gabor_is_due_is_a_fixation_failure(self) -> None:
+        scene = make_scene()
+        with Clock() as clock:
+            self._gaze_fixate(scene, clock)
+            self._lose(scene)
+            scene._start_stimulus_phase()
+        self.assertEqual(scene._result.result, ResultEnum.TIMEOUT)
+        self.assertEqual(scene._result.response, "broke_fixation")
+        self.assertTrue(scene._result.ended_by_blink)
+        self.assertNotIn(scene._gabor, scene._sprites)
+        self.assertEqual(last_timer(scene), (500, scene.quit))
+        self.assertFalse(scene._result.counts_toward_rate)
+
+    def test_long_loss_before_fixation_never_cancels(self) -> None:
+        scene = make_scene()
+        scene.quit = Mock()
+        with Clock() as clock:
+            scene._on_trial_start()
+            scene._on_press(GAZE_TOUCH_ID, scene._positions["left"])
+            self._lose(scene)
+            clock.advance_ms(4900)
+            self._lose(scene)
+        scene.quit.assert_not_called()
+        self.assertEqual(scene._result.result, ResultEnum.PENDING)
+        # The 5 s fixation limit is what ends such a trial.
+        scene._on_fixation_timeout()
+        self.assertEqual(scene._result.response, "no_fixation")
+        self.assertFalse(scene._result.ended_by_blink)
+
     def test_blink_during_reward_or_inter_trial_is_ignored(self) -> None:
         scene = make_scene("left")
         with Clock() as clock:
@@ -697,12 +691,13 @@ class LostGazeSignalTests(unittest.TestCase):
 
 
 class EndOfTrialTests(unittest.TestCase):
-    def test_gaze_loss_after_resolution_does_not_cut_trial_short(self) -> None:
-        scene = make_scene()
-        scene.quit = Mock()
-        scene._result.result = ResultEnum.CORRECT
-        scene.on_gaze_abandoned()
-        scene.quit.assert_not_called()
+    def test_driver_giving_up_on_the_gaze_never_ends_a_trial(self) -> None:
+        for result in (ResultEnum.PENDING, ResultEnum.CORRECT):
+            scene = make_scene()
+            scene.quit = Mock()
+            scene._result.result = result
+            scene.on_gaze_abandoned()
+            scene.quit.assert_not_called()
 
     def test_manual_reward_counted_once(self) -> None:
         scene = make_scene()

@@ -210,13 +210,8 @@ class StoredConfig(BaseModel):
     # at once.
     dwell_grace_enabled: bool = False
     dwell_grace_ms: PositiveInt = 150
-    # Lost-signal grace: when enabled, the eye tracker may lose the gaze
-    # entirely (blink, pupil lost) for up to gaze_lost_grace_ms; meanwhile
-    # the gaze counts nowhere and the delay's fixation check is paused,
-    # and the trial carries on if it returns. When disabled, losing the
-    # signal after gaze has been picked up cancels the trial at once.
-    gaze_lost_grace_enabled: bool = True
-    gaze_lost_grace_ms: PositiveInt = 5000
+    # Blinks (the eye tracker losing the gaze) have fixed rules per phase,
+    # with no setting: see the scene module's docstring.
 
     show_gaze_trace: bool = False
     gaze_trace_duration_ms: NonNegativeInt = 500
@@ -299,12 +294,6 @@ class Config(BaseModel):
         """The dwell grace in effect (0 when disabled)."""
         stored = self.stored
         return stored.dwell_grace_ms if stored.dwell_grace_enabled else 0.0
-
-    @property
-    def gaze_lost_grace_ms(self) -> float:
-        """The lost-signal grace in effect (0 when disabled)."""
-        stored = self.stored
-        return stored.gaze_lost_grace_ms if stored.gaze_lost_grace_enabled else 0.0
 
     @property
     def fixation_point_radius_px(self) -> float:
