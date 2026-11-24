@@ -4,8 +4,8 @@ Trial flow (one scene instance per trial, like every other stage here):
 
 1. fixation  - the fixation point appears at the center position. Gaze must
                stay within fixation_tolerance_cm of it for
-               min_touch_duration_ms. Leaving the area resets that (no grace
-               period). Not done within fixation_timeout_ms: TIMEOUT.
+               min_touch_duration_ms. Leaving the area resets that (after
+               dwell_grace_ms, if dwell_grace_enabled). Not done within fixation_timeout_ms: TIMEOUT.
 2. delay     - a random fixation_delay_min_ms..max_ms gap. Gaze must stay
                on the fixation point; leaving it is a TIMEOUT. The point
                stays or goes per keep_fixation_point_after_fixation.
@@ -91,9 +91,6 @@ if TYPE_CHECKING:
 
 type Phase = Literal["blank", "fixation", "delay", "stimulus", "reward"]
 
-# No grace period: leaving a tolerance area resets an in-progress dwell.
-_DWELL_GRACE_MS = 0.0
-
 
 class _CancellableTask(Protocol):
     """What FrameTimer.after() returns (its own type is private)."""
@@ -150,6 +147,8 @@ class TaskMichelsonContrast(Scene):
         self._stimulus_onset_ms = 0.0
         # True while the eye tracker has no gaze sample (blink, pupil lost).
         self._gaze_lost = False
+        # When gaze left the fixation area during the delay (dwell grace).
+        self._outside_fixation_since_ms: float | None = None
 
         self._animal = self._mxbiflow.session.require_current_animal()
         self._config = self._init_config(self._animal, self._mxbiflow)
@@ -170,7 +169,7 @@ class TaskMichelsonContrast(Scene):
         self._gaze_driver = GazeDwellDriver(
             _get_gaze_sample,
             self,
-            lost_grace_ms=self._config.stored.gaze_lost_grace_ms,
+            lost_grace_ms=self._config.gaze_lost_grace_ms,
             already_down=GAZE_TOUCH_ID in self._trackers,
         )
 
@@ -556,18 +555,24 @@ class TaskMichelsonContrast(Scene):
         self._start_phase_timer(delay_ms, self._start_stimulus_phase)
 
     def _check_fixation_held(self) -> None:
-        """During the delay: gaze leaving the fixation area ends the trial
-        at once as a TIMEOUT (no grace period). Losing the eye signal is
-        not a departure: the check pauses until gaze returns. If it stays
-        lost for gaze_lost_grace_ms the trial is cancelled instead (see
-        on_gaze_abandoned)."""
+        """During the delay: gaze leaving the fixation area for longer than
+        the dwell grace (at once when it is disabled) ends the trial as a
+        TIMEOUT. Losing the eye signal is not a departure: the check pauses
+        until gaze returns. If it stays lost past the lost-signal grace the
+        trial is cancelled instead (see on_gaze_abandoned)."""
         if self._is_gaze_lost():
             return
         is_inside = any(
             tracker.last_pos is not None and self._is_in_area(tracker.last_pos, "center")
             for tracker in self._trackers.values()
         )
-        if not is_inside:
+        if is_inside:
+            self._outside_fixation_since_ms = None
+            return
+        now_ms = monotonic() * 1000
+        if self._outside_fixation_since_ms is None:
+            self._outside_fixation_since_ms = now_ms
+        if now_ms - self._outside_fixation_since_ms >= self._config.dwell_grace_ms:
             self._resolve(ResultEnum.TIMEOUT, "broke_fixation")
 
     def _start_stimulus_phase(self) -> None:
@@ -869,7 +874,7 @@ class TaskMichelsonContrast(Scene):
             pos,
             is_inside,
             self._config.stored.min_touch_duration_ms,
-            _DWELL_GRACE_MS,
+            self._config.dwell_grace_ms,
         )
         if not fired_now:
             return
@@ -950,7 +955,7 @@ class TaskMichelsonContrast(Scene):
         event.post(Event(QUIT))
 
     def on_gaze_abandoned(self) -> None:
-        """Gaze signal lost for longer than gaze_lost_grace_ms. An
+        """Gaze signal lost for longer than the lost-signal grace. An
         unresolved trial is cancelled; a resolved one is left to finish."""
         if self._running and self._result.result == ResultEnum.PENDING:
             self.quit()

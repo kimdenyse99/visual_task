@@ -194,11 +194,20 @@ class StoredConfig(BaseModel):
     position_distance_x_cm: float = Field(default=1.5, ge=0)
     position_distance_y_cm: float = Field(default=3.0, ge=0)
 
-    # Gaze must stay inside a tolerance area this long to count. Leaving
-    # the area resets it at once (no grace period).
+    # Gaze must stay inside a tolerance area this long to count.
     min_touch_duration_ms: NonNegativeInt = 100
-    # How long the eye tracker may lose the gaze signal entirely before
-    # the trial is cancelled (see gaze_input.GazeDwellDriver).
+    # Dwell grace: when enabled, gaze may leave a tolerance area for up to
+    # dwell_grace_ms without resetting the dwell, or (during the delay)
+    # without breaking fixation. When disabled, leaving resets / breaks it
+    # at once.
+    dwell_grace_enabled: bool = False
+    dwell_grace_ms: PositiveInt = 150
+    # Lost-signal grace: when enabled, the eye tracker may lose the gaze
+    # entirely (blink, pupil lost) for up to gaze_lost_grace_ms; meanwhile
+    # the gaze counts nowhere and the delay's fixation check is paused,
+    # and the trial carries on if it returns. When disabled, losing the
+    # signal after gaze has been picked up cancels the trial at once.
+    gaze_lost_grace_enabled: bool = True
     gaze_lost_grace_ms: PositiveInt = 5000
 
     show_gaze_trace: bool = False
@@ -276,6 +285,18 @@ class Config(BaseModel):
 
     def cm_to_px(self, cm: float) -> float:
         return cm * self.stored.pixels_per_cm
+
+    @property
+    def dwell_grace_ms(self) -> float:
+        """The dwell grace in effect (0 when disabled)."""
+        stored = self.stored
+        return stored.dwell_grace_ms if stored.dwell_grace_enabled else 0.0
+
+    @property
+    def gaze_lost_grace_ms(self) -> float:
+        """The lost-signal grace in effect (0 when disabled)."""
+        stored = self.stored
+        return stored.gaze_lost_grace_ms if stored.gaze_lost_grace_enabled else 0.0
 
     @property
     def fixation_point_radius_px(self) -> float:
