@@ -5,7 +5,8 @@ Trial flow (one scene instance per trial, like every other stage here):
 1. fixation  - the fixation point appears at the center position. Gaze must
                stay within fixation_tolerance_cm of it for
                min_touch_duration_ms. Leaving the area resets that (after
-               dwell_grace_ms, if dwell_grace_enabled). Not done within fixation_timeout_ms: TIMEOUT.
+               dwell_grace_ms, if dwell_grace_enabled). Not done within
+               fixation_timeout_ms: TIMEOUT.
 2. delay     - a random fixation_delay_min_ms..max_ms gap. Gaze must stay
                on the fixation point; leaving it is a TIMEOUT. The point
                stays or goes per keep_fixation_point_after_fixation.
@@ -24,6 +25,11 @@ Trial flow (one scene instance per trial, like every other stage here):
                at the fixation point on 0% trials) for reward_duration_ms
                while the reward is dispensed.
 5. blank     - inter_trial_duration_ms of empty screen, then the next trial.
+
+Blinks (the eye tracker losing the gaze) are fine before gaze reaches the
+fixation point and during the delay. A blink that interrupts the fixation
+dwell is a TIMEOUT (no_fixation); a blink while the Gabor is shown is a
+TIMEOUT (blinked). See _on_gaze_signal_lost.
 """
 
 import math
@@ -738,6 +744,7 @@ class TaskMichelsonContrast(Scene):
         zero_total = 0
         zero_rewarded = 0
         no_fixation = 0
+        blinked = 0
         reward = 0
         for trial in self._load_trials().root.values():
             reward += trial.trial_reward_count + trial.trial_manual_reward_count
@@ -746,6 +753,9 @@ class TaskMichelsonContrast(Scene):
                 continue
             if trial.is_fixation_failure:
                 no_fixation += 1
+                continue
+            if trial.response == "blinked":
+                blinked += 1
                 continue
             if trial.is_zero_contrast:
                 zero_total += 1
@@ -766,6 +776,7 @@ class TaskMichelsonContrast(Scene):
             f"Timeout {counts[ResultEnum.TIMEOUT]} | "
             f"0% {zero_rewarded}/{zero_total} | "
             f"No fix {no_fixation} | "
+            f"Blink {blinked} | "
             f"Reward {reward} | "
             f"Cancelled {counts[ResultEnum.CANCELLED]}"
         )
@@ -855,10 +866,7 @@ class TaskMichelsonContrast(Scene):
         if tracker is None:
             return
         if touch_id == GAZE_TOUCH_ID and self._gaze_lost:
-            # No eye signal: the gaze counts nowhere. A dwell in progress
-            # starts over once the eye is back.
-            if not tracker.fired:
-                tracker.reset()
+            self._on_gaze_signal_lost(tracker)
             return
         # Keep the position current even after a dwell has fired: the
         # delay phase checks it to see whether fixation is still held.
@@ -882,6 +890,28 @@ class TaskMichelsonContrast(Scene):
             self._on_fixation_acquired()
         elif self._phase == "stimulus":
             self._on_side_dwell(pos)
+
+    def _on_gaze_signal_lost(self, tracker: DwellTracker) -> None:
+        """The eye tracker has no sample this frame (a blink, or the pupil
+        lost). What that means depends on the phase:
+
+        * fixation - fine while gaze isn't on the fixation point yet (it
+          just counts nowhere); interrupting the dwell on the point is a
+          TIMEOUT (no_fixation).
+        * stimulus - a TIMEOUT (blinked), left out of the level-up rate.
+        * delay    - fine: the fixation check pauses until the eye is back
+          (see _check_fixation_held), within the lost-signal grace.
+        * reward / blank - the trial is already decided; ignored.
+        """
+        if self._phase == "fixation":
+            if tracker.inside_since_ms is not None and not tracker.fired:
+                self._result.ended_by_blink = True
+                self._resolve(ResultEnum.TIMEOUT, "no_fixation")
+            else:
+                tracker.reset()
+        elif self._phase == "stimulus":
+            self._result.ended_by_blink = True
+            self._resolve(ResultEnum.TIMEOUT, "blinked")
 
     def _prune_trace(self) -> None:
         max_age_ms = self._config.stored.gaze_trace_duration_ms

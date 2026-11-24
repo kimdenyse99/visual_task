@@ -590,8 +590,8 @@ class LostSignalGraceSwitchTests(unittest.TestCase):
 
 
 class LostGazeSignalTests(unittest.TestCase):
-    """While the eye tracker has no sample, gaze counts nowhere; during the
-    delay a loss pauses the fixation check instead of breaking it."""
+    """Blinks are fine before gaze reaches the fixation point and during the
+    delay; interrupting the fixation dwell or the Gabor ends the trial."""
 
     def _lose(self, scene: Any) -> None:
         scene._mxbiflow.eye_sample = None
@@ -609,24 +609,35 @@ class LostGazeSignalTests(unittest.TestCase):
         scene.update(0.0)
         assert scene._phase == "delay"
 
-    def test_lost_signal_does_not_count_toward_fixation(self) -> None:
+    def test_blink_before_gaze_reaches_the_point_is_fine(self) -> None:
+        scene = make_scene()
+        with Clock() as clock:
+            scene._on_trial_start()
+            scene._on_press(GAZE_TOUCH_ID, scene._positions["left"])
+            scene.update(0.0)
+            self._lose(scene)
+            clock.advance_ms(300)
+            self._lose(scene)
+            self.assertEqual(scene._result.result, ResultEnum.PENDING)
+            self._regain(scene, "center")
+            clock.advance_ms(101)
+            scene.update(0.0)
+        self.assertEqual(scene._phase, "delay")
+        self.assertFalse(scene._result.ended_by_blink)
+
+    def test_blink_during_the_fixation_dwell_is_a_timeout(self) -> None:
         scene = make_scene()
         with Clock() as clock:
             scene._on_trial_start()
             scene._on_press(GAZE_TOUCH_ID, scene._positions["center"])
             clock.advance_ms(60)
             self._lose(scene)
-            clock.advance_ms(500)
-            self._lose(scene)
-            self.assertEqual(scene._phase, "fixation")
-            # Back on the point: the 100 ms dwell starts over.
-            self._regain(scene, "center")
-            clock.advance_ms(60)
-            scene.update(0.0)
-            self.assertEqual(scene._phase, "fixation")
-            clock.advance_ms(41)  # 101 ms: clear of float rounding
-            scene.update(0.0)
-        self.assertEqual(scene._phase, "delay")
+        self.assertEqual(scene._result.result, ResultEnum.TIMEOUT)
+        self.assertEqual(scene._result.response, "no_fixation")
+        self.assertTrue(scene._result.ended_by_blink)
+        self.assertEqual(scene._phase, "blank")
+        self.assertEqual(last_timer(scene), (500, scene.quit))
+        self.assertFalse(scene._result.counts_toward_rate)
 
     def test_blink_during_delay_does_not_break_fixation(self) -> None:
         scene = make_scene()
@@ -651,26 +662,38 @@ class LostGazeSignalTests(unittest.TestCase):
             scene.update(0.0)
         self.assertEqual(scene._result.result, ResultEnum.TIMEOUT)
         self.assertEqual(scene._result.response, "broke_fixation")
+        self.assertFalse(scene._result.ended_by_blink)
 
-    def test_lost_signal_restarts_a_dwell_on_the_gabor(self) -> None:
+    def test_blink_while_the_gabor_is_shown_is_a_timeout(self) -> None:
+        for contrast in (50.0, 0.0):
+            scene = make_scene("left", contrast=contrast)
+            with Clock() as clock:
+                self._gaze_fixate(scene, clock)
+                scene._start_stimulus_phase()
+                clock.advance_ms(50)
+                self._lose(scene)
+            self.assertEqual(scene._result.result, ResultEnum.TIMEOUT)
+            self.assertEqual(scene._result.response, "blinked")
+            self.assertTrue(scene._result.ended_by_blink)
+            self.assertEqual(scene._sprites.sprites(), [])
+            scene._rewarder.give_reward.assert_not_called()
+            self.assertFalse(scene._result.counts_toward_rate)
+
+    def test_blink_during_reward_or_inter_trial_is_ignored(self) -> None:
         scene = make_scene("left")
         with Clock() as clock:
             self._gaze_fixate(scene, clock)
             scene._start_stimulus_phase()
-            scene._on_motion(GAZE_TOUCH_ID, scene._positions["left"])
-            clock.advance_ms(60)
-            self._lose(scene)
-            clock.advance_ms(100)
-            self._lose(scene)
-            self.assertEqual(scene._result.result, ResultEnum.PENDING)
-            self._regain(scene, "left")
-            clock.advance_ms(60)
+            look_at = scene._positions["left"]
+            scene._on_motion(GAZE_TOUCH_ID, look_at)
+            clock.advance_ms(101)
             scene.update(0.0)
-            self.assertEqual(scene._result.result, ResultEnum.PENDING)
-            clock.advance_ms(41)  # 101 ms: clear of float rounding
-            scene.update(0.0)
+            self.assertEqual(scene._phase, "reward")
+            self._lose(scene)
+            scene._on_reward_finished()
+            self._lose(scene)
         self.assertEqual(scene._result.result, ResultEnum.CORRECT)
-        self.assertAlmostEqual(scene._result.response_latency_ms, 261, places=3)
+        self.assertEqual(scene._phase, "blank")
 
 
 class EndOfTrialTests(unittest.TestCase):
@@ -773,6 +796,12 @@ class SettlementTests(unittest.TestCase):
                     response="broke_fixation",
                     contrast=0,
                 ),
+                6: make_result(
+                    trial_id=6,
+                    result=ResultEnum.TIMEOUT,
+                    response="blinked",
+                    ended_by_blink=True,
+                ),
             }
         )
         scene._load_trials = Mock(return_value=trials)
@@ -782,6 +811,7 @@ class SettlementTests(unittest.TestCase):
         self.assertIn("Timeout 0", summary)
         self.assertIn("0% 1/2", summary)
         self.assertIn("No fix 2", summary)
+        self.assertIn("Blink 1", summary)
 
 
 if __name__ == "__main__":

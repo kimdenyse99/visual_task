@@ -51,6 +51,7 @@ type StimulusSide = Literal["left", "right"]
 #   broke_fixation  gaze left the fixation point during the delay
 #   withheld        0% contrast, gaze stayed off both sides (rewarded)
 #   false_alarm     0% contrast, gaze went to a side
+#   blinked         the eye signal was lost while the Gabor was shown
 type Response = Literal[
     "in_window",
     "early",
@@ -61,6 +62,7 @@ type Response = Literal[
     "broke_fixation",
     "withheld",
     "false_alarm",
+    "blinked",
 ]
 
 
@@ -90,6 +92,11 @@ class Result(BaseModel):
     # GIF flashed with the reward, if one was given.
     reward_asset: str | None = None
 
+    # True when losing the eye signal (a blink) ended the trial: during the
+    # fixation dwell (response "no_fixation") or with the Gabor shown
+    # ("blinked").
+    ended_by_blink: bool = False
+
     trial_reward_count: int = 0
     trial_manual_reward_count: int = 0
 
@@ -114,6 +121,7 @@ class Result(BaseModel):
             self.result is ResultEnum.CANCELLED
             or self.is_zero_contrast
             or self.is_fixation_failure
+            or self.response == "blinked"
         )
 
 
