@@ -1,7 +1,7 @@
 {
   "default": {
     "inter_trial_duration_ms": 500,
-    "reward_duration_ms": 1000,
+    "reward_duration_ms": 500,
     "reward_gifs": ["m001.gif", "m006.gif", "m007.gif", "m009.gif"],
     "border_width": 40,
     "pixels_per_cm": 46,
@@ -42,8 +42,8 @@
     "levels": {
       "1": {
         "contrasts": [
-          { "contrast_percent": 0, "weight": 1 },
-          { "contrast_percent": 50, "weight": 3 }
+          { "contrast_percent": 50, "weight": 1 },
+          { "contrast_percent": 100, "weight": 1 }
         ]
       },
       "2": {
