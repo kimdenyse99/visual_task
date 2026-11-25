@@ -22,14 +22,14 @@
     "fixation_delay_max_ms": 200,
 
     "fixation_tolerance_cm": 1,
-    "stimulus_tolerance_cm": 0.5,
+    "stimulus_tolerance_cm": 1,
 
     "position_distance_x_cm": 1.5,
     "position_distance_y_cm": 3,
 
     "response_window_min_ms": 0,
     "response_window_max_ms": 500,
-    "stimulus_duration_ms": 1000,
+    "stimulus_duration_ms": 500,
 
     "target_size_cm": 1.5,
     "spatial_frequency_cpcm": 4,
