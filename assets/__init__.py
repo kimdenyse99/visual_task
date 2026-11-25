@@ -1,8 +1,9 @@
 from pathlib import Path
 
-_REAL_MARMOSET_IMAGE_DIR = (
-    Path(__file__).parent / "visual_stimulus" / "real_marmoset_images"
-)
+# Marmoset GIFs: the calibration stages' targets, and the reward images
+# flashed by task_michelson_contrast.
+GIF_STIMULUS_DIR = Path(__file__).parent / "visual_stimulus" / "gifs_stimulus"
+_REAL_MARMOSET_IMAGE_DIR = GIF_STIMULUS_DIR
 M001 = _REAL_MARMOSET_IMAGE_DIR / "m001.gif"
 M002 = _REAL_MARMOSET_IMAGE_DIR / "m002.gif"
 M003 = _REAL_MARMOSET_IMAGE_DIR / "m003.gif"
@@ -30,6 +31,7 @@ NATURAL_TWITTER_PATHS = sorted(_AUDITORY_STIMULUS_DIR.glob("natural-twitter-*.wa
 
 __all__ = [
     "GFG001",
+    "GIF_STIMULUS_DIR",
     "M001",
     "M002",
     "M003",

@@ -14,9 +14,9 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-mxbiflow = { git = "https://github.com/PJendritza/mxbiflow.git", branch = "feature/mx-eye-events" }
-py-mx-eye = { git = "https://github.com/PJendritza/mx_eye.git", branch = "feature/mxbi-events", subdirectory = "packages/py-mx-eye" }
-mx-eye-protocol = { git = "https://github.com/PJendritza/mx_eye.git", branch = "feature/mxbi-events", subdirectory = "packages/protocol" }
+mxbiflow = { git = "https://github.com/PJendritza/mxbiflow.git", branch = "main" }
+py-mx-eye = { git = "https://github.com/PJendritza/mx_eye.git", branch = "main", subdirectory = "packages/py-mx-eye" }
+mx-eye-protocol = { git = "https://github.com/PJendritza/mx_eye.git", branch = "main", subdirectory = "packages/protocol" }
 
 [tool.pyright]
 include = ["analysis", "main.py", "models.py", "stages", "tests"]

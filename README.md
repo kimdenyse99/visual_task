@@ -15,6 +15,7 @@ Registered in `main.py` and run in this order by `mxbiflow`'s scene manager:
 | `visual_3pt_calibration` | `Visual3ptCalibration` | Fixation → randomized blank gap → target at one of three positions. Used to collect calibration data. |
 | `visual_3pt_calibration_v2` | `Visual3ptCalibrationV2` | Fixation point at one of three positions; gaze dwelling within a configurable radius of it gives an immediate reward while a random marmoset GIF plays in its place. No gaze within `fixation_timeout_ms` (default 5 s) is a timeout. |
 | `visual_tracing` | `VisualTracing` | Fixation → a circular target placed at a random position in the right half of the screen. |
+| `task_michelson_contrast` | `TaskMichelsonContrast` | Fixation (5 s limit) → 100–200 ms delay holding fixation → a Gabor (random orientation) on the left or right at a contrast drawn from the level's weighted list. Gaze on it within the 0–500 ms reward window is rewarded with a marmoset GIF flashed in its place; 0% contrast trials reward looking at neither side and are counted separately. |
 
 Each stage has its own `config.json` (per-animal levels, timings, sizes,
 reward durations, level-up thresholds) and `models.py` (Pydantic config and
@@ -31,6 +32,7 @@ gaze_input.py             Feeds MX Eye gaze samples into the touch/dwell logic a
 stimulus_events.py        Reports fixation/target onset and offset to MX Eye
 trial_events.py           Per-trial CSV sidecar files (e.g. target shown) with CLOCK_REALTIME timestamps
 animated_gif_sprite.py    Looping animated-GIF sprite (decoded with Pillow)
+gabor_sprite.py           Gabor patch sprite (grating under a Gaussian window)
 assets/                   Visual (marmoset GIFs, synthetic images) and auditory stimuli
 analysis/                 Plotting helpers for trial results
 scripts/                  chrony NTP server install/check scripts for clock sync with MX Eye
