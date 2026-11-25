@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.14"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -584,7 +584,7 @@ dependencies = [
 [[package]]
 name = "mxbiflow"
 version = "0.3.26"
-source = { git = "https://github.com/PJendritza/mxbiflow.git?branch=feature%2Fmx-eye-events#c910aaeab38bd0609cbd03395949ab33fb10a69f" }
+source = { git = "https://github.com/PJendritza/mxbiflow.git?branch=main#6adc904ef5c66a5c90d04378171d872a9104641c" }
 dependencies = [
     { name = "gpiozero" },
     { name = "inflection" },
@@ -1288,7 +1288,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mxbiflow", extras = ["log"], git = "https://github.com/PJendritza/mxbiflow.git?branch=feature%2Fmx-eye-events" },
+    { name = "mxbiflow", extras = ["log"], git = "https://github.com/PJendritza/mxbiflow.git?branch=main" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "pillow", specifier = ">=11.0.0" },
     { name = "pymotego", specifier = ">=0.1.6" },
